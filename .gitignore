@@ -76,6 +76,33 @@ data-cira-diff/*
 !data-cira-diff/README.md
 !data-cira-diff/.gitkeep
 
+# Scientific data
+data/
+datasets/
+*.zarr/
+*.npy
+*.npz
+*.raw
+*.nc
+*.h5
+*.hdf5
+*.tif
+*.tiff
+*.tar
+*.tar.gz
+*.zip
+
+# Model weights
+*.pt
+*.pth
+*.ckpt
+
+# Generated outputs
+outputs/
+results/
+logs/
+checkpoints/
+
 # PyBuilder
 target/
 
