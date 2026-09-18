@@ -71,6 +71,11 @@ instance/
 # Sphinx documentation
 docs/_build/
 
+# Local development data. Keep the directory note, never commit dataset payloads.
+data-cira-diff/*
+!data-cira-diff/README.md
+!data-cira-diff/.gitkeep
+
 # PyBuilder
 target/
 
