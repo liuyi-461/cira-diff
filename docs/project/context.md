@@ -34,6 +34,14 @@
 
 [UNKNOWN] 当前仓库没有可直接运行的独立 rollout/inference 脚本；`cira_diff/generate.py` 只有占位说明，完整历史脚本位于 `scripts/Chase_2025/` 的 notebook/训练脚本体系中，需后续整理并验证。
 
+## Lab 层项目定位（canonical，2026-09-22）
+
+[DECISION] 项目范围是 **Satellite Forecasting Lab**，而不是 CIRA-Diff 本身。研究对象是未来卫星云图，当前以单通道红外亮温为主，并将确定性预报和概率预报作为相互关联但分开的研究方向。
+
+[FACT] CIRA-Diff 仍是受保护的 working baseline 和 reproduction 起点。它的双帧、单步、自回归设计是比较对象，不是整个领域的规定答案。
+
+[PLAN] 只有在 `docs/data/` 中验证 Himawari-8/9 的数据谱系、时间戳、空间语义和切分策略后，才能加入 Himawari 研究和多帧 sequence-to-sequence 模型。
+
 ## 技术栈
 
 - Python >= 3.8

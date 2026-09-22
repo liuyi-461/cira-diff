@@ -48,3 +48,19 @@ model_input = concat(noisy_y, c, channel=1)
 [UNKNOWN] `/data1/satcast/` 不含 per-sample timestamp 或生成 Zarr 的完整索引脚本，因此无法仅凭该目录确认每个 patch 的原始 GOES 文件名和跨 sample 连续性。
 
 [BLOCKED] 本地 smoke test 仍受 `torch` 和 `zarr` 缺失影响；已完成远端 Zarr 元数据与少量样本读取。
+
+## 6. 任务区分
+
+[DECISION] Lab 使用“satellite cloud forecasting”作为目标任务。Generic video prediction 可以提供方法和时间建模思路，但不能建立 brightness temperature 的物理含义。Precipitation nowcasting 的 target 和 threshold semantics 不同。NWP/AI weather forecasting 可能预测大气状态或使用额外变量。只有 input、target、sampling、horizon 和 verification contracts 匹配时，比较才有效。
+
+## 7. 实验必须控制的变量
+
+每个 temporal-formulation comparison 必须记录：
+
+- sensor/channel 以及物理单位或 normalization；
+- temporal interval 和 input/output frame count；
+- spatial crop/grid 和 split policy；
+- 分别记录 teacher forcing、scheduled sampling、rollout training 和 free-running inference；
+- parameter count、training budget 和 sampler settings；
+- lead-time metrics 以及 structural/scale/event diagnostics；
+- checkpoint selection rule，以及结果是 single-sample、ensemble mean 还是 ensemble distribution。

@@ -1,6 +1,6 @@
-# AI Development Workflow
+# AI 研发工作流
 
-## 1. Purpose
+## 1. 目的
 
 本文件定义 CIRA-Diff 项目中 **人类研发人员、Claude、Codex 及其他 AI Agent 的标准协作流程**。
 
@@ -14,7 +14,7 @@
 
 ---
 
-## 2. Source of Truth
+## 2. Source of Truth（事实来源优先级）
 
 项目中的信息优先级如下：
 

@@ -1,1 +1,3 @@
-THIS IS UNDER DEVELOPMENT. DON"T USE THIS PART YET! - Randy 
+# 说明
+
+该部分仍在开发中，暂时不要使用。——Randy

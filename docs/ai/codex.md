@@ -1,6 +1,6 @@
-# Codex Working Guide
+# Codex 协作指南
 
-## Role
+## 角色
 
 Codex 在本项目中的主要职责是：
 
@@ -16,7 +16,7 @@ Codex 在本项目中的主要职责是：
 
 ---
 
-## Mandatory Startup Procedure
+## 强制启动流程
 
 开始任何任务前：
 
@@ -35,7 +35,7 @@ Codex 在本项目中的主要职责是：
 
 ---
 
-## Current Highest Priority
+## 当前最高优先级
 
 不要先写正式 AI 模型。
 
@@ -50,7 +50,7 @@ P3 Formal Algorithm
 
 ---
 
-## Code Modification Principles
+## 代码修改原则
 
 ### Minimal Patch
 

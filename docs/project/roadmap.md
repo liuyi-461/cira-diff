@@ -42,3 +42,25 @@
 - ensemble calibration 与 regime-aware uncertainty。
 
 以上方向均为候选计划，不代表已作出模型选择。
+
+## Lab 架构阶段
+
+### Phase 0 — Knowledge reconstruction（当前）
+
+[RESULT] 完成仓库、分支、现有科研记录和 OpenNowcastLab 组织方式的审计；在保留历史文档的同时建立 canonical 导航。
+
+### Phase 1 — CIRA-Diff reference gate
+
+[PLAN] 验证环境、数据合同、单样本、模型构建、checkpoint 路径、单步预报和 rollout 对齐；所有 artifact 记录在 `reproduction/cira_diff/` 和一张实验卡中。
+
+### Phase 2 — Common data/evaluation contract
+
+[PLAN] 在模型比较前冻结 sample 语义、normalization、split manifest、lead-time 索引、threshold 和 artifact schema。
+
+### Phase 3 — Temporal formulation comparison
+
+[PLAN] 将双帧 autoregressive 范式与受控的长历史、多未来输出方案进行比较；在证据形成前不决定优选范式。
+
+### Phase 4 — Cross-model and regime-aware research
+
+[PLAN] 只加入回答明确比较问题所需的 baseline，再研究尺度、冷云、对流和热带气旋行为，并明确限制条件。

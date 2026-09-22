@@ -1,6 +1,58 @@
-# CIRA-Diffusion
-main contact: Randy Chase 
-email: dopplerchase12 'at' gmail.com
+# Satellite Forecasting Lab
+
+本仓库正从 CIRA-Diff working repository 增量升级为 **satellite cloud-image forecasting / satellite nowcasting** 科研实验室。长期问题是：如何利用历史静止气象卫星观测预报未来云场，当前从单通道红外亮温开始。
+
+## 从这里开始
+
+- [Repository audit](docs/project/repository_audit.md) — 当前实现、记录、完成项、计划项和未知项。
+- [Current state](docs/project/current_state.md) — Research State 与 Engineering State。
+- [Lab architecture](docs/project/architecture.md) — 代码、科研、复现、实验和评价。
+- [Research questions](docs/research/questions.md) 与 [hypotheses](docs/research/hypotheses.md)。
+- [Dataset system](docs/data/README.md) 与 [evaluation system](docs/evaluation/README.md)。
+- [Experiment registry](docs/experiments/registry.md)。
+- [Reproduction registry](reproduction/README.md)。
+- [CIRA-Diff migration plan](docs/project/migration.md)。
+
+## Project identity
+
+CIRA-Diff 是当前起点，因为它提供了一个具体且可追溯的 satellite-only baseline：两帧历史 GOES-16 ABI Channel 13 图像、一个 10 分钟目标帧，以及到 3 小时的 18 步 autoregressive rollout。这个设计选择是 baseline 事实，不是对卫星预报正确时间建模范式的结论。
+
+Lab 将在明确的数据合同和评价合同下比较：
+
+- 短历史 → 单步预测 → autoregressive rollout；
+- 长历史 → 多未来帧序列预测；
+- 确定性与概率预报；
+- 云场运动、内禀演变、尺度依赖结构和高影响天气型。
+
+## Current status
+
+[FACT] 受保护的 working implementation 仍在 `cira_diff/`，旧训练脚本位于 `scripts/Chase_2025/`。
+
+[RESULT] 现有 knowledge base 记录了远端 CIRA-Diff Zarr 审计和计划中的本地开发子集，但当前仓库没有已验证的本地模型运行或统一 evaluation CLI。
+
+[PLAN] 新代码已在 `src/satforecast/` 下建立 scaffold；在 import、upstream compatibility 和 reproduction behavior 验证前，暂不迁移实现。
+
+## 如何使用 Lab
+
+- 检查当前 baseline：从 `reproduction/cira_diff/` 和 `docs/research/cira_diff.md` 开始。
+- 运行 CIRA-Diff：先在实验卡中记录环境、数据路径、config、seed 和 artifact；下面保留的历史命令在当前 checkout 中尚未验证。
+- 增加模型：先建立 `reproduction/<model>/` 记录，再定义 data/evaluation adapter；只有 reference behavior 和测试通过后，才 promotion 到 `src/satforecast/`。
+- 增加实验：复制 `docs/experiments/templates/experiment_card.md`，在 `docs/experiments/registry.md` 注册 ID，并分开记录 result、interpretation 和 conclusion。
+- 评价预报：遵循 `docs/evaluation/evaluation_protocol.md`，记录 lead time、mask、threshold、normalization 和 artifact 路径。
+- 不得把 planned baseline、论文指标或生成图像当作已复现的科研结果。
+
+## Existing CIRA-Diff workflow
+
+下面保留原始的 upstream-oriented overview 作为 provenance。在实验卡中记录命令、环境、数据路径和 artifact 前，其中的历史说明都应视为未验证。
+
+---
+
+# 历史上游项目概览（原有内容保留）
+
+以下旧版上游说明仍保留作为 provenance。新增 canonical 文档统一使用中文；其中的英文原文暂不删除，以避免改变历史记录。
+
+主要联系人：Randy Chase
+邮箱：dopplerchase12 'at' gmail.com
 
 ## Introduction 
 

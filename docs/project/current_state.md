@@ -20,6 +20,8 @@
 - 完整的旧训练脚本在 `scripts/Chase_2025/`。
 - `cira_diff/train_Diff.py` 和 `train_CorrDiff.py` 的 main 中关键加载/建模/训练代码目前被注释，不能直接视为可运行入口。
 
+[CONFLICT] 上面的历史记录写的是 `e59d4ba`；当前分支审计记录 `main` 为 `12c4bf9`。保留旧记录作为 provenance，但以 `repository_audit.md` 作为当前 Git 状态的 source of truth。
+
 ## 当前问题
 
 - [BLOCKED] 本地 Python 环境缺少 `torch` 和 `zarr`，尚未运行本地 Dataset/DataLoader smoke test。
@@ -33,3 +35,21 @@
 1. 在已有环境或隔离环境中补齐最小 `torch`/`zarr` 依赖，运行本地 Dataset/DataLoader smoke test。
 2. 实现独立 single-step、rollout、metrics 评估脚本，并用本地 validation/test truth 检查 18-step 序列对齐。
 3. 将官方训练入口收敛到可配置命令，先做极小 smoke run，再做正式 baseline reproduction。
+
+## Canonical Lab 状态 — 2026-09-22
+
+### Research State（科研状态）
+
+- [FACT] 项目已有关于 temporal formulation、概率不确定性和 pixel-versus-structure skill 的三个研究问题，现已在 `docs/research/questions.md` 中整理并扩展为 RQ-001–RQ-008。
+- [HYPOTHESIS] history length、rollout drift、scale dependence、event skill 和 diffusion uncertainty 的候选假设已登记，但仍为 untested，见 `docs/research/hypotheses.md`。
+- [RESULT] 现有证据确认了 `docs/data/` 中记录的 CIRA-Diff 派生样本组织，但不能证明模型 forecast skill。
+- [UNKNOWN] 尚未记录完成任何受控 history-length comparison、model comparison、概率校准分析或案例卫星预报研究。
+
+### Engineering State（工程状态）
+
+- [FACT] working implementation 仍是 `cira_diff/`，加上 `scripts/Chase_2025/` 下的旧脚本。
+- [PLAN] `src/satforecast/`、`configs/`、分组 scripts、`reproduction/`、`experiments/` 和 `tests/` 已提供非侵入式 Lab scaffold。
+- [ISSUE] 没有已验证的独立 rollout/evaluation CLI；CIRA-Diff 训练入口的 `main` 中仍有注释掉的 setup 和旧式硬编码路径。
+- [BLOCKED] 先前审计记录本地缺少 `torch` 和 `zarr`，因此 Dataset/DataLoader smoke test 仍未验证。
+
+详细审计和 evidence ledger 维护在 `docs/project/repository_audit.md`。
