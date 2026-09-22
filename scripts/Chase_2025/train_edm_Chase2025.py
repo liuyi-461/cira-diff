@@ -36,23 +36,23 @@ class TrainingConfig:
     """ This should be probably in some sort of config file, but for now its here... """
     #data things 
     image_size = 256  #this assumes square images
-    train_batch_size = 45 #this is as big as I can fit on the GH200 [45,3,256,256]
+    train_batch_size = 16
     
     #training things 
-    num_epochs = 1000 #this should be similar to NVIDIA's StormCast 
+    num_epochs = 2
     gradient_accumulation_steps = 2 #this helped with stability, i think... 
     learning_rate = 1e-4 #default value from butterflies example
-    lr_warmup_steps = 500 #default value from butterflies example
+    lr_warmup_steps = 10
     save_model_epochs = 1 #i like to save alot, doesnt cost much 
     mixed_precision = "fp16"
-    output_dir = "/mnt/data1/rchas1/diffusion_edm_fixed_scaling/"  # the local path to store the model 
+    output_dir = "/home/group1/26fall_aiclass/ly/cira-diff/outputs/edm/"
     push_to_hub = False 
     hub_private_repo = False
     overwrite_output_dir = True  
     seed = 0 
     restart = False #do you want to start from a previous training?
-    restart_path = "/mnt/data1/rchas1/diffusion_edm_fixed_scaling/"
-    dataset_path = "/home/rchas1/diffusion_10_4_2inputs_v3_gh200.zarr"
+    restart_path = "/home/group1/26fall_aiclass/ly/cira-diff/outputs/edm/"
+    dataset_path = "/data1/satcast/edm_GOES_ch13_train_dataset.zarr"
     
     #tensorboard things 
     plot_images = True 
@@ -213,16 +213,12 @@ class EDMLoss:
 #         return torch.tensor(output_image, dtype=torch.float16),torch.tensor(input_image, dtype=torch.float16)
 
 class ZarrDataset(Dataset):
-    """
-    This is a new zarr instance of the dataset that loads all data into CPU memory to minimize I/O overhead.
-    """
-    def __init__(self, zarr_store):
+    def __init__(self, zarr_store, max_samples=None):
         self.store = zarr_store
         self.data = zarr.open(self.store, mode='r')
-        
-        # Load data into CPU memory
-        self.input_images = torch.tensor(self.data['input_images'][:], dtype=torch.float16, device='cpu')
-        self.output_images = torch.tensor(self.data['output_images'][:], dtype=torch.float16, device='cpu')
+        n = max_samples if max_samples else self.data['input_images'].shape[0]
+        self.input_images = torch.tensor(self.data['input_images'][:n], dtype=torch.float16, device='cpu')
+        self.output_images = torch.tensor(self.data['output_images'][:n], dtype=torch.float16, device='cpu')
         self.length = self.input_images.shape[0]
 
     def __len__(self):
@@ -271,7 +267,7 @@ def train_loop(config, model, optimizer, dataset, lr_scheduler):
         if config.plot_images:
             
             #image writer for the tensorboard 
-            writer = SummaryWriter(config.output_dir + "logs/images")
+            writer = SummaryWriter(os.path.join(config.output_dir, "logs/images"))
             #need a random seed for the edm process that we run after every epoch.         
             rnd = StackedRandomGenerator('cuda',np.arange(0,config.train_batch_size,1).astype(int).tolist())
             latents = rnd.randn([config.train_batch_size, 1, 256, 256],device='cuda')
@@ -310,7 +306,7 @@ def train_loop(config, model, optimizer, dataset, lr_scheduler):
                 writer.add_image("Example {}".format(i), color_image, 2)
         
         #properly setup the dataset now with shuffling 
-        train_dataloader = torch.utils.data.DataLoader(dataset, batch_size=config.train_batch_size, shuffle=True,num_workers=8,
+        train_dataloader = torch.utils.data.DataLoader(dataset, batch_size=config.train_batch_size, shuffle=True,num_workers=0,
                                                        pin_memory=True,worker_init_fn = worker_init_fn)
         
         if config.restart:
@@ -642,7 +638,7 @@ def load_checkpoint(checkpoint_path, model, optimizer, lr_scheduler, accelerator
 config = TrainingConfig()
 
 # Initialize the dataset
-dataset = ZarrDataset(config.dataset_path)
+dataset = ZarrDataset(config.dataset_path, max_samples=50)
 
 #go ahead and build a UNET, this was the exact same as the butterfly example, but different channels. This is a big model.. 
 # in_channels = noisy_dim + condition_channels. 

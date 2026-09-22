@@ -25,16 +25,12 @@ from diffusers.utils.torch_utils import randn_tensor
 from torch.utils.tensorboard import SummaryWriter
 
 class ZarrDataset(Dataset):
-    """
-    This is a new zarr instance of the dataset that loads all data into CPU memory to minimize I/O overhead.
-    """
-    def __init__(self, zarr_store):
+    def __init__(self, zarr_store, max_samples=None):
         self.store = zarr_store
         self.data = zarr.open(self.store, mode='r')
-        
-        # Load data into CPU memory
-        self.input_images = torch.tensor(self.data['input_images'][:], dtype=torch.float16, device='cpu')
-        self.output_images = torch.tensor(self.data['output_images'][:], dtype=torch.float16, device='cpu')
+        n = max_samples if max_samples else self.data['input_images'].shape[0]
+        self.input_images = torch.tensor(self.data['input_images'][:n], dtype=torch.float16, device='cpu')
+        self.output_images = torch.tensor(self.data['output_images'][:n], dtype=torch.float16, device='cpu')
         self.length = self.input_images.shape[0]
 
     def __len__(self):
@@ -45,8 +41,8 @@ class ZarrDataset(Dataset):
         return self.output_images[idx], self.input_images[idx]
 
 # Initialize the dataset
-zarr_store = '/home/rchas1/diffusion_10_4_2inputs_v3_gh200.zarr'
-dataset = ZarrDataset(zarr_store)
+zarr_store = '/data1/satcast/edm_GOES_ch13_train_dataset.zarr'
+dataset = ZarrDataset(zarr_store, max_samples=1)
 
 # ################### \Imports ########################
 
@@ -57,19 +53,19 @@ dataset = ZarrDataset(zarr_store)
 class TrainingConfig:
     """ This should be probably in some sort of config file, but for now its here... """
     image_size = 256  
-    train_batch_size = 45 #need to check if this can fit...
-    val_batch_size = 45
-    num_epochs = 210 # 
-    gradient_accumulation_steps = 1 #shouldnt need this if i am not adding noise 
+    train_batch_size = 1
+    val_batch_size = 1
+    num_epochs = 1000
+    gradient_accumulation_steps = 1
     learning_rate = 1e-4 
-    lr_warmup_steps = 500
-    save_model_epochs = 1 
+    lr_warmup_steps = 10
+    save_model_epochs = 100
     mixed_precision = "fp16" 
-    output_dir = "/mnt/data1/rchas1/vanilla_unet_10_two_inputs_v2/"  # the local path to store the model 
+    output_dir = "/home/group1/26fall_aiclass/ly/cira-diff/outputs/vanilla_unet_overfit/"
     push_to_hub = False
     hub_private_repo = False
     overwrite_output_dir = True  
-    seed = 0 
+    seed = 0
 
 # ################### \Classes ########################
 
@@ -96,7 +92,7 @@ def train_loop(config, model, optimizer, train_dataloader, lr_scheduler, val_dat
         accelerator.init_trackers("train_example")
 
         #Stuff to have an image show up 
-        writer = SummaryWriter("/mnt/data1/rchas1/vanilla_unet_10_two_inputs_v2/logs/images")
+        writer = SummaryWriter(os.path.join(config.output_dir, "logs/images"))
                 #define random noise/seed vectors, here is enough seeds to run one batch of data through (i.e., one image per batch)
 
         #grab a batch of data 
@@ -295,17 +291,10 @@ def train_loop(config, model, optimizer, train_dataloader, lr_scheduler, val_dat
                     color_image = torch.tensor(colorize(image,vmin=-4,vmax=2,cmap='Spectral_r')).permute(2, 0, 1)
                     writer.add_image("Slider", color_image, 0)
 
-        # Check if training should be stopped due to lack of improvement
-        if no_improvement_count >= patience:
-            print(f"Early stopping triggered after {patience} epochs without improvement.")
-                # Check if multi-GPU is being used
-            if accelerator.num_processes > 1:
-                print(f"Killing multi-GPU processes using dist.barrier() and dist.destroy_process_group()")
-                # Signal all processes to stop
-                dist.barrier()  # Ensure all processes are synchronized
-                dist.destroy_process_group() 
-                
-            break
+        # Early stopping disabled for overfit test
+        # if no_improvement_count >= patience:
+        #     ...
+        #     break
                     
         gc.collect()
         
@@ -342,7 +331,7 @@ def colorize(value, vmin=None, vmax=None, cmap=None):
     # squeeze last dim if it exists
     value = value.squeeze()
 
-    cmapper = matplotlib.cm.get_cmap(cmap)
+    cmapper = matplotlib.colormaps.get_cmap(cmap)
     value = cmapper(value,bytes=True) # (nxmx4)
     return value
 
@@ -353,11 +342,8 @@ def colorize(value, vmin=None, vmax=None, cmap=None):
 #initalize config 
 config = TrainingConfig()
 
-#split it 
-splits = torch.utils.data.random_split(dataset, [0.8,0.2]) 
-
-ds_train = splits[0]
-ds_val = splits[1]
+ds_train = torch.utils.data.Subset(dataset, [0])
+ds_val = torch.utils.data.Subset(dataset, [0])
 
 #throw it in a dataloader for fast CPU handoffs. 
 #Note, you could add preprocessing steps with image permuations here i think 
@@ -401,3 +387,47 @@ lr_scheduler = get_cosine_schedule_with_warmup(
 
 #main method here! 
 train_loop(config, model, optimizer, train_dataloader, lr_scheduler,val_dataloader)
+
+# ################### Inference & Visualization ########################
+print("\n" + "="*60)
+print("Inference & Visualization - Single Sample Overfit Test")
+print("="*60)
+
+# Grab the single sample
+cond_tensor = dataset.input_images[0:1].to('cuda').float()
+target_tensor = dataset.output_images[0:1].to('cuda').float()
+
+# Load trained model from disk (freshest checkpoint)
+from diffusers import UNet2DModel as _UNet2DModel
+model_ft = _UNet2DModel.from_pretrained(config.output_dir).to('cuda')
+model_ft.eval()
+
+with torch.no_grad():
+    pred = model_ft(cond_tensor, torch.zeros(1, device='cuda'), return_dict=False)[0]  # [1, 1, 256, 256]
+
+# Compute metrics
+mse = ((pred.float() - target_tensor.float()) ** 2).mean().item()
+mae = (pred.float() - target_tensor.float()).abs().mean().item()
+print(f"Test MSE: {mse:.6f}")
+print(f"Test MAE: {mae:.6f}")
+
+# Visualization
+fig, axes = plt.subplots(1, 5, figsize=(20, 4))
+
+# cond channel 0
+ax = axes[0]; im = ax.imshow(cond_tensor[0, 0].cpu().float(), cmap='Spectral_r', vmin=-4, vmax=2); ax.set_title('Input Ch0'); ax.axis('off'); plt.colorbar(im, ax=ax, fraction=0.046)
+# cond channel 1
+ax = axes[1]; im = ax.imshow(cond_tensor[0, 1].cpu().float(), cmap='Spectral_r', vmin=-4, vmax=2); ax.set_title('Input Ch1'); ax.axis('off'); plt.colorbar(im, ax=ax, fraction=0.046)
+# target (ground truth)
+ax = axes[2]; im = ax.imshow(target_tensor[0, 0].cpu().float(), cmap='Spectral_r', vmin=-4, vmax=2); ax.set_title('Target (GT)'); ax.axis('off'); plt.colorbar(im, ax=ax, fraction=0.046)
+# prediction
+ax = axes[3]; im = ax.imshow(pred[0, 0].cpu().float(), cmap='Spectral_r', vmin=-4, vmax=2); ax.set_title(f'Prediction (MSE={mse:.4f})'); ax.axis('off'); plt.colorbar(im, ax=ax, fraction=0.046)
+# absolute error
+ax = axes[4]; err = (pred[0, 0].cpu().float() - target_tensor[0, 0].cpu().float()).abs(); im = ax.imshow(err, cmap='hot'); ax.set_title(f'Absolute Error (MAE={mae:.4f})'); ax.axis('off'); plt.colorbar(im, ax=ax, fraction=0.046)
+
+plt.suptitle(f'Single Sample Overfit Test — UNet 2-ch input → 1-ch target', fontsize=14)
+plt.tight_layout()
+out_png = os.path.join(config.output_dir, 'overfit_visualization.png')
+plt.savefig(out_png, dpi=150, bbox_inches='tight')
+print(f"\nVisualization saved to: {out_png}")
+plt.show()
