@@ -60,3 +60,35 @@
 ## 影响
 
 所有实验记录必须同时写明 `Remote Full/Open Dataset` 与 `Local Development Subset`，并通过 `.gitignore` 避免数据 payload 被提交。
+
+# DEC-004 项目范围是卫星预报，而不是只有 CIRA-Diff
+
+## 日期
+
+2026-09-22
+
+## 决策内容
+
+[DECISION] 使用 Satellite Forecasting Lab 作为项目身份。将 CIRA-Diff 视为当前 reproduction/baseline 起点，并保持其实现原位。
+
+## 原因
+
+科研问题涉及不同卫星预报方法中的时间建模、云场运动和内禀演变；将项目绑定到一个 diffusion baseline 会抹去真正的比较问题。
+
+## 影响
+
+新模型和实验必须连接到共同的数据合同与评价合同，旧 CIRA-Diff 文档继续作为 provenance。
+
+# DEC-005 将 reproduction 和 verification 设为一级层
+
+## 日期
+
+2026-09-22
+
+## 决策内容
+
+[DECISION] 保留独立的 `reproduction/`、`docs/experiments/` 和 `docs/evaluation/` 层。在 reference behavior、测试和证据形成前，不得将代码 promotion 到 `src/satforecast/`。
+
+## 原因
+
+本决策借鉴 OpenNowcastLab 对 upstream provenance、experiment evidence 和 stable reusable implementation 的分离方式，但不复制其雷达专属内容。

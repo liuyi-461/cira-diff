@@ -22,3 +22,22 @@
 
 - 论文报告的 CorrDiff 优势、ensemble calibration 和 3 h 结果是 `[EVIDENCE]`，不是本项目 `[RESULT]`。
 - “两帧足够”不是当前项目结论；最多是需要通过 history-length ablation 验证的 `[HYPOTHESIS]`。
+
+## Canonical evidence levels（证据等级）
+
+保留原有标签，并增加 `[CONFLICT]` 表示来源之间尚未解决的不一致：
+
+| 标签 | 含义 | 本项目示例 |
+| --- | --- | --- |
+| `[FACT]` | 当前树或可复现本地 artifact 中直接验证的事实 | 源码中 `ZarrDataset` 返回 `(target, condition)` |
+| `[EVIDENCE]` | 已验证的外部/历史审计证据，但不一定在本地重跑 | 论文任务定义或此前远端 Zarr 审计 |
+| `[HYPOTHESIS]` | 可检验命题，不是结果 | 长历史可能改善长 lead time |
+| `[RESULT]` | 命名本地实验测得的结果 | EXP-001 数据审计 shape 结果 |
+| `[CONCLUSION]` | 由关联结果支持的限定性解释 | train/eval target 长度不同 |
+| `[DECISION]` | 项目政策或研究选择 | 保持 `cira_diff/` 原位 |
+| `[ISSUE]` | 已知工程/科研风险 | 硬编码路径 |
+| `[PLAN]` | 未来计划工作 | history-length ablation |
+| `[UNKNOWN]` | 尚未建立 | 时间戳/checkpoint checksum |
+| `[CONFLICT]` | 来源不一致或语义尚未解决 | 脚本与数据记录中的 normalization 常数 |
+
+代码存在不是科学有效性的证据。论文结果不是本地结果。预报图像不是气象学结论。

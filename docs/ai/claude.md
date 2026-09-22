@@ -1,6 +1,6 @@
-# Claude Working Guide
+# Claude 协作指南
 
-## Role
+## 角色
 
 Claude 在本项目中适合承担：
 
@@ -18,7 +18,7 @@ Claude 在本项目中适合承担：
 
 ---
 
-## Before Coding
+## 编码前
 
 必须先读：
 
@@ -41,7 +41,7 @@ target files
 
 ---
 
-## Current Priorities
+## 当前优先级
 
 ```text
 1. Real EC/METAR data
@@ -54,7 +54,7 @@ target files
 
 ---
 
-## Implementation Style
+## 实现风格
 
 ### Prefer
 

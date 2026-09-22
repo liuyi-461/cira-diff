@@ -22,3 +22,7 @@
 下一步：补齐本地 `torch`/`zarr` 依赖后运行 Dataset/DataLoader smoke test，建立可运行命令和评估输出。
 
 复现教程：待补充，目标文档为 `docs/training/dataset.md`、`docs/training/training_config.md` 和 `docs/training/evaluation.md`。
+
+## Canonical experiment layer
+
+上面的历史 EXP-001 记录保留。canonical registry 和详细实验卡位于 [`docs/experiments/registry.md`](../experiments/registry.md) 与 [`docs/experiments/cira_diff/EXP-001-cira-diff-data-audit.md`](../experiments/cira_diff/EXP-001-cira-diff-data-audit.md)。`docs/training/` 文档继续作为 training-specific historical context，不构成第二套 experiment source of truth。

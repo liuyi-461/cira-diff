@@ -1,3 +1,23 @@
+# Satellite Forecasting Lab 文档说明
+
+升级后 Lab 的 canonical 导航如下：
+
+| 范围 | Canonical 位置 |
+| --- | --- |
+| 项目身份、架构、状态和决策 | `docs/project/` |
+| 科学问题、假设、文献和方法 | `docs/research/` |
+| 数据合同、谱系、预处理和切分 | `docs/data/` |
+| 验证与评价指标 | `docs/evaluation/` |
+| 单个实验的证据包 | `docs/experiments/` 和 `experiments/` |
+| 上游 provenance 与 adapter | `reproduction/` |
+| Reproduction 工作流和状态语义 | `docs/reproduction/` |
+| 受保护的 CIRA-Diff 实现 | `cira_diff/` 和 `scripts/Chase_2025/` |
+| 未来经过验证的可复用包 | `src/satforecast/` |
+
+本文后半部分是从 CIRA-Diff knowledge-base commit 保留下来的原始文档规范。新文档应遵循上面的 canonical 范围表，并将原有材料作为 provenance 保留，不得静默删除。
+
+---
+
 # 项目文档（docs）统一规范
 
 ## 1. 文档体系目标

@@ -47,3 +47,23 @@ Latent Diffusion Model。先用 VAE 将图像压缩到 latent space，再在 lat
 ## Exposure bias
 
 训练阶段主要看真值历史、推理阶段却看模型历史，导致 rollout 中输入分布发生偏移的问题。
+
+## Satellite forecasting（卫星预报）
+
+利用历史卫星观测预报未来卫星图像或亮温等物理观测量。它与 generic video prediction、precipitation nowcasting 和 NWP 相关，但具有不同的目标语义和评价要求。
+
+## Rollout training 与 rollout inference
+
+**Rollout inference** 将模型预测递归反馈到下一个输入窗口。**Rollout training** 在优化过程中明确让模型接触多步或模型生成的历史。不能用前者证明后者发生过。
+
+## History length（历史长度）
+
+提供给预报模型的观测帧数。必须与时间间隔一起报告；“两帧”本身不能定义物理观测窗口。
+
+## Forecast lead time（预报提前量）
+
+最新输入观测与目标/预测帧之间的时间差。它不等同于 diffusion sampler 的 denoising steps 数量。
+
+## Data Contract（数据合同）
+
+对 sample shape、dtype、单位、时间含义、空间含义、normalization、split 和 provenance 的版本化声明。没有共同数据合同的模型比较，并不自动具有科学可解释性。

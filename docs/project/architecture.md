@@ -58,3 +58,32 @@ validation/test: input[2 frames] -> truth[18 future frames]
 [FACT] 当前仓库实现的是单步条件扩散训练与采样组件。
 
 [UNKNOWN] 当前仓库是否完整重现论文中的所有数据生成、验证集超参选择和批量评估流程，尚未由本项目实验确认。
+
+## Satellite Forecasting Lab 架构
+
+仓库按责任组织，但受保护实现保持原位：
+
+```text
+research question → hypothesis → experiment
+        ↓                 ↓           ↓
+     data contract → reproduction → evidence / decision
+        ↓                 ↓           ↓
+       configs       cira_diff/   evaluation artifacts
+                         ↓
+                 src/satforecast/ (only verified promotions)
+```
+
+| 层 | 职责 | 当前状态 |
+| --- | --- | --- |
+| `docs/project/` | 项目身份、状态、决策、迁移和知识缺口 | Active canonical docs |
+| `docs/research/` | 研究问题、假设、文献、方法和结论 | Active；主要是未验证研究计划 |
+| `docs/data/` | 数据合同、谱系、预处理和切分语义 | CIRA-Diff 已记录；Himawari 未解决 |
+| `reproduction/` | 上游 provenance、状态、adapter 和复现 gates | CIRA-Diff 详细；其他 baseline 为 scaffold |
+| `docs/experiments/` | 人类可读的实验卡和 registry | 已重建 EXP-001 审计记录 |
+| `experiments/` | 未来 run-local config、日志、输出和机器 artifact | 仅 scaffold |
+| `cira_diff/` | 受保护的 CIRA-Diff working implementation | 现有代码；未迁移 |
+| `scripts/Chase_2025/` | 旧训练与预报 notebook/script | 现有，尚未标准化 |
+| `src/satforecast/` | 未来稳定可复用的卫星预报代码 | 按设计保持空 scaffold |
+| `docs/evaluation/` | 共享验证语义和指标状态 | 已规划合同；无本地 evaluator 结论 |
+
+Promotion rule：upstream behavior → reproduction evidence → controlled experiment → reusable conclusion → verified `src/` implementation。代码能够 import 或生成图像，并不足以进入 stable layer。

@@ -1,9 +1,9 @@
-# Nowcasting IR data
+# 红外云图预报数据
 
-## introduction 
+## 简介
 
-This folder contains the exact python scripts to train the models in the paper titled "Score based diffusion nowcasting of GOES imagery". Note some paths are likely different because I renamed the scripts and datasets, but this is the bulk of the code. 
+本目录包含论文《Score based diffusion nowcasting of GOES imagery》中模型训练所使用的 Python 脚本。由于脚本和数据集曾被重命名，部分路径可能已经不同，但这里保留了主要代码。
 
-Example call:
+示例命令：
 
 `` accelerate launch train_edm_Chase2025.py `` 
