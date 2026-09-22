@@ -16,3 +16,6 @@ license = {text = "MIT"}
 
 [project.urls]
 Homepage = "https://github.com/dopplerchase/cira-diff"
+
+[tool.setuptools]
+packages = ["cira_diff"]

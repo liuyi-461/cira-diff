@@ -36,7 +36,7 @@ class TrainingConfig:
     """ This should be probably in some sort of config file, but for now its here... """
     #data things 
     image_size = 256  #this assumes square images
-    train_batch_size = 45 #this is as big as I can fit on the GH200 [45,3,256,256]
+    train_batch_size = 8 #原作者在GH200(96GB)上是45,4090(24GB)建议8~16
     
     #training things 
     num_epochs = 1000 #this should be similar to NVIDIA's StormCast 
@@ -45,18 +45,18 @@ class TrainingConfig:
     lr_warmup_steps = 500 #default value from butterflies example
     save_model_epochs = 1 #i like to save alot, doesnt cost much 
     mixed_precision = "fp16"
-    output_dir = "/mnt/data1/rchas1/diffusion_edm_fixed_scaling/"  # the local path to store the model 
+    output_dir = "/home/group1/26fall_aiclass/dcm/outputs/"  # the local path to store the model
     push_to_hub = False 
     hub_private_repo = False
     overwrite_output_dir = True  
     seed = 0 
     restart = False #do you want to start from a previous training?
-    restart_path = "/mnt/data1/rchas1/diffusion_edm_fixed_scaling/"
-    dataset_path = "/home/rchas1/diffusion_10_4_2inputs_v3_gh200.zarr"
+    restart_path = "/home/group1/26fall_aiclass/dcm/outputs/"
+    dataset_path = "/data1/satcast/edm_GOES_ch13_train_dataset.zarr"
     
     #tensorboard things 
     plot_images = True 
-    images_idx = [3,5,10,15] #these need to be smaller than train_batch_size 
+    images_idx = [0,1,2,3] #these need to be smaller than train_batch_size(原来[3,5,10,15],batch=8时越界)
     
     #loss params (defaults to the edm paper)
     P_mean=-1.2
@@ -309,17 +309,21 @@ def train_loop(config, model, optimizer, dataset, lr_scheduler):
                 color_image = torch.tensor(colorize(image,vmin=-6,vmax=4,cmap='Spectral_r')).permute(2, 0, 1)
                 writer.add_image("Example {}".format(i), color_image, 2)
         
-        #properly setup the dataset now with shuffling 
-        train_dataloader = torch.utils.data.DataLoader(dataset, batch_size=config.train_batch_size, shuffle=True,num_workers=8,
-                                                       pin_memory=True,worker_init_fn = worker_init_fn)
-        
-        if config.restart:
-            start_epoch, global_step = load_checkpoint(config.restart_path + 'checkpoint.pth', model, optimizer, lr_scheduler, accelerator)
-            epochs = np.arange(start_epoch,config.num_epochs)
-        else:
-            #iterator to see how many gradient steps have been done
-            global_step = 0
-            epochs = range(config.num_epochs)
+    #properly setup the dataset now with shuffling(所有进程都需要,accelerate会自动分片)
+    train_dataloader = torch.utils.data.DataLoader(dataset, batch_size=config.train_batch_size, shuffle=True,num_workers=8,
+                                                   pin_memory=True,worker_init_fn = worker_init_fn)
+
+    #自动检测存档:如果存在checkpoint.pth就从断点续训,否则从头开始(所有进程都需要加载相同权重)
+    ckpt_path = config.restart_path + 'checkpoint.pth'
+    if os.path.exists(ckpt_path):
+        print('发现已有存档,从断点续训: {}'.format(ckpt_path))
+        start_epoch, global_step = load_checkpoint(ckpt_path, model, optimizer, lr_scheduler, accelerator)
+        epochs = np.arange(start_epoch,config.num_epochs)
+    else:
+        print('未发现存档,从头开始训练')
+        #iterator to see how many gradient steps have been done
+        global_step = 0
+        epochs = range(config.num_epochs)
             
 
     # Prepare everything
@@ -444,7 +448,7 @@ def train_loop(config, model, optimizer, dataset, lr_scheduler):
                     
                     if config.plot_images:
                         #run a batch of images through for tensorboard (takes < 1 min)
-                        images_batch = edm_sampler(model,latents,condition_images_eval,num_steps=18)
+                        images_batch = edm_sampler(accelerator.unwrap_model(model),latents,condition_images_eval,num_steps=18)
 
                         for i in np.arange(0,len(config.images_idx)):
 
@@ -626,7 +630,7 @@ def save_checkpoint(model, optimizer, lr_scheduler, epoch, step, accelerator, ch
     
 def load_checkpoint(checkpoint_path, model, optimizer, lr_scheduler, accelerator):
     """ A function from chatGPT to help load checkpoints training restarts """ 
-    checkpoint = torch.load(checkpoint_path, map_location=accelerator.device)
+    checkpoint = torch.load(checkpoint_path, map_location=accelerator.device, weights_only=False)
     accelerator.unwrap_model(model).model.load_state_dict(checkpoint['model_state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     lr_scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
