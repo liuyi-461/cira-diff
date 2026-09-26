@@ -1,5 +1,5 @@
 # Satellite Forecasting Lab
-
+测试编辑中
 本仓库正从 CIRA-Diff working repository 增量升级为 **satellite cloud-image forecasting / satellite nowcasting** 科研实验室。长期问题是：如何利用历史静止气象卫星观测预报未来云场，当前从单通道红外亮温开始。
 
 ## 从这里开始
