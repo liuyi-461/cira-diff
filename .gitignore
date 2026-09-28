@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+.DS_Store
 
 # C extensions
 *.so
@@ -71,6 +72,50 @@ instance/
 # Sphinx documentation
 docs/_build/
 
+# Local development data. Keep the directory note, never commit dataset payloads.
+data-cira-diff/*
+!data-cira-diff/README.md
+!data-cira-diff/.gitkeep
+
+# Scientific data
+data/
+datasets/
+*.zarr/
+*.npy
+*.npz
+*.raw
+*.nc
+*.h5
+*.hdf5
+*.tif
+*.tiff
+*.tar
+*.tar.gz
+*.zip
+
+# Model weights
+*.pt
+*.pth
+*.ckpt
+
+# Generated outputs
+outputs/
+results/
+logs/
+checkpoints/
+
+# Keep source/documentation directories whose names intentionally match the
+# broad scientific-data patterns above. Payloads remain ignored by their
+# specific extensions/rules.
+!docs/data/
+!docs/data/**
+!docs/logs/
+!docs/logs/**
+!scripts/data/
+!scripts/data/**
+!src/satforecast/data/
+!src/satforecast/data/**
+
 # PyBuilder
 target/
 
@@ -127,3 +172,10 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Experiment tracking
+wandb/
+runs/
+
+# Additional model weights
+*.safetensors
