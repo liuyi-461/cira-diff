@@ -6,7 +6,7 @@ from torch.utils.data import Dataset
 from dataclasses import dataclass
 import torch
 from torch.utils.data import Dataset, DataLoader
-from diffusers import UNet2DModel
+from diffusers.models.unets.unet_2d import UNet2DModel
 import torch
 from PIL import Image
 import numpy as np
@@ -23,7 +23,7 @@ import os
 import math
 from typing import List, Optional, Tuple, Union
 from diffusers.utils.torch_utils import randn_tensor
-from torch.utils.tensorboard import SummaryWriter
+from torch.utils.tensorboard.writer import SummaryWriter
 
 
 #################### \Imports ########################
@@ -45,14 +45,14 @@ class TrainingConfig:
     lr_warmup_steps = 500 #default value from butterflies example
     save_model_epochs = 1 #i like to save alot, doesnt cost much 
     mixed_precision = "fp16"
-    output_dir = "/mnt/data1/rchas1/diffusion_edm_fixed_scaling/"  # the local path to store the model 
+    output_dir = "/home/group1/zjt/model/"  # the local path to store the model 
     push_to_hub = False 
     hub_private_repo = False
     overwrite_output_dir = True  
     seed = 0 
     restart = False #do you want to start from a previous training?
-    restart_path = "/mnt/data1/rchas1/diffusion_edm_fixed_scaling/"
-    dataset_path = "/home/rchas1/diffusion_10_4_2inputs_v3_gh200.zarr"
+    restart_path = "/home/group1/zjt/model/"
+    dataset_path = "/data1/satcat/edm_GOES_ch13_train_dataset.zarr"
     
     #tensorboard things 
     plot_images = True 

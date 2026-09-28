@@ -4,7 +4,7 @@ from torch.utils.data import Dataset
 from dataclasses import dataclass
 import torch
 from torch.utils.data import Dataset, DataLoader
-from diffusers import UNet2DModel
+from diffusers.models.unets.unet_2d import UNet2DModel
 import torch
 from PIL import Image
 import numpy as np
@@ -22,7 +22,7 @@ import os
 import math
 from typing import List, Optional, Tuple, Union
 from diffusers.utils.torch_utils import randn_tensor
-from torch.utils.tensorboard import SummaryWriter
+from torch.utils.tensorboard.writer import SummaryWriter
 
 class ZarrDataset(Dataset):
     """
@@ -65,7 +65,7 @@ class TrainingConfig:
     lr_warmup_steps = 500
     save_model_epochs = 1 
     mixed_precision = "fp16" 
-    output_dir = "/mnt/data1/rchas1/vanilla_unet_10_two_inputs_v2/"  # the local path to store the model 
+    output_dir = "/home/group1/zjt/model/"  # the local path to store the model 
     push_to_hub = False
     hub_private_repo = False
     overwrite_output_dir = True  

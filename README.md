@@ -2,6 +2,8 @@
 main contact: Randy Chase 
 email: dopplerchase12 'at' gmail.com
 
+test
+
 ## Introduction 
 
 ![Alt Text](./aux/movies/output.gif)
