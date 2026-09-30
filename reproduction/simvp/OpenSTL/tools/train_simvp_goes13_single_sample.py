@@ -27,8 +27,10 @@ Notes
 * Reuses ``openstl/datasets/dataloader_goes13.py`` for the data contract.
 * Normalization statistics are taken from a reference pool (``--ref-samples``,
   default 32) rather than from the single sample itself, which would degenerate.
-* Visualization styling follows ``test_dl/test_single_sample_Chase2025.py``
-  (``Spectral_r``, vmin=-4, vmax=2) so the two views stay comparable.
+* Visualization styling (``Spectral_r``, vmin=-4, vmax=2) is fixed in this script so
+  the two views stay comparable. The convention originally came from the now-removed
+  ``test_dl/test_single_sample_Chase2025.py`` and is recorded in
+  ``docs/experiments/cira_diff/EXP-001-cira-diff-data-audit.md``.
 
 Dependencies: torch, lightning, timm, fvcore, zarr, numpy, matplotlib.
 """
@@ -105,7 +107,7 @@ class SingleSampleExperiment(BaseExperiment):
 
 # ------------------------------------------------------------------- utils ---
 def colorize(value, vmin=None, vmax=None, cmap='Spectral_r'):
-    """Same helper as test_dl/test_single_sample_Chase2025.py."""
+    """Colorize a single-channel field to RGB using the fixed Spectral_r convention."""
     vmin = value.min() if vmin is None else vmin
     vmax = value.max() if vmax is None else vmax
     value = (value - vmin) / (vmax - vmin) if vmin != vmax else value * 0.0
@@ -156,13 +158,16 @@ def make_cli_parser():
     parser.add_argument('--ref-samples', type=int, default=32,
                         help='Samples used to estimate normalization mean/std')
     parser.add_argument('--epochs', type=int, default=100, help='Overfit epochs')
-    parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--model-type', default='gSTA', type=str)
     parser.add_argument('--vmin', type=float, default=-4.0, help='Colorize lower bound')
     parser.add_argument('--vmax', type=float, default=2.0, help='Colorize upper bound')
     parser.add_argument('--output-dir', default='./single_sample_goes13_output', type=str)
     parser.add_argument('--cpu', action='store_true', default=False)
     parser.add_argument('--display-method-info', action='store_true', default=False)
+    # NOTE: see the comment in tools/train_simvp_goes13_smoke.py::make_cli_parser.
+    # '--lr' must not be re-registered (argparse conflict) and '--model-type' shares
+    # its dest with the upstream '--model_type', whose default (None) would win.
+    parser.set_defaults(lr=1e-3, model_type='gSTA')
     return parser
 
 

@@ -38,6 +38,8 @@
 - 不走 `BaseExperiment` 加载配置时，务必显式 `update_config(...)` 读入 config 文件，
   否则 `hid_S/hid_T/N_T` 等只会落到 `SimVP_Model` 的内部默认值，实验不可复现。
 - 可视化前必须先**反归一化**（`pred * std + mean`），否则量纲不对，与既有
-  `test_dl/test_single_sample_Chase2025.py` 的 `vmin=-4, vmax=2` 不可比。
+  EXP-003 脚本里写死的 `vmin=-4, vmax=2`（源自已删除的
+  `test_dl/test_single_sample_Chase2025.py`，约定见
+  `docs/experiments/cira_diff/EXP-001-cira-diff-data-audit.md`）不可比。
 - 判读顺序：先看单样本 loss 曲线是否数量级下降，再看并列图 predicted 是否复现 truth；
   loss 不降 → 查 lr/归一化；输出无结构 → 查通道 / 时间轴 / skip 连接。

@@ -33,9 +33,19 @@ Usage
 -----
     python tools/train_simvp_goes13_smoke.py \
         --zarr /path/to/satcast/edm_GOES_ch13_train_dataset.zarr \
+        --res_dir /abs/path/to/OpenSTL/work_dirs \
+        --ex_name simvp_goes13_smoke \
         --n-train 128 --n-val 32 --n-test 32 --epochs 3 --batch-size 8
 
-Outputs land in ``work_dirs/<ex_name>/`` (checkpoints + ``saved/*.npy``).
+On a scheduler use ``sbatch test_dl/test_dl.slurm`` (absolute paths baked in).
+
+``--res_dir`` / ``--ex_name`` are upstream options and therefore spelled with an
+underscore; always pass absolute paths, because the defaults are relative and the
+landing directory would otherwise depend on the job's working directory.
+
+Outputs land in ``<res_dir>/<ex_name>/`` (checkpoints, ``saved/*.npy``,
+``model_param.json``). The directories are created automatically when training
+starts; nothing has to be pre-created.
 
 Dependencies: torch, lightning, timm, fvcore, zarr, numpy, opencv-python
 (``timm`` and ``fvcore`` are already required by OpenSTL itself).
@@ -96,7 +106,6 @@ def make_cli_parser():
     parser.add_argument('--n-test', type=int, default=32, help='Test subsample size')
     parser.add_argument('--epochs', type=int, default=3, help='Number of training epochs')
     parser.add_argument('--batch-size', type=int, default=8, help='Train / val batch size')
-    parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate')
     parser.add_argument('--model-type', default='gSTA', type=str,
                         help='SimVP hidden translator backbone')
     parser.add_argument('--num-workers', type=int, default=2, help='DataLoader workers')
@@ -106,6 +115,15 @@ def make_cli_parser():
                         help='Force CPU even when CUDA is available')
     parser.add_argument('--display-method-info', action='store_true', default=False,
                         help='Print model summary / FLOPs (needs fvcore)')
+    # NOTE: '--lr' is already registered by create_parser(); re-adding it raises
+    # "argparse.ArgumentError: conflicting option string: --lr".
+    # Also, several flags added here share their dest with an upstream flag
+    # (--model_type / --batch_size / --num_workers). argparse keeps only the FIRST
+    # registered default per dest, so our defaults were silently ignored
+    # (model_type=None -> MetaBlock NotImplementedError; batch_size=16; num_workers=4).
+    # set_defaults() patches the default of every action sharing the dest, so the
+    # intended defaults take effect while keeping both spellings usable.
+    parser.set_defaults(lr=1e-3, model_type='gSTA', batch_size=8, num_workers=2)
     return parser
 
 
@@ -182,6 +200,15 @@ def main():
         raise ValueError(
             f'train subsample ({len(train_idx)}) is smaller than batch_size '
             f'({args.batch_size}); the train loader uses drop_last=True.')
+
+    # --- DBG-007 护栏：全量 preload 会把整个子集读进内存 ---
+    # 每样本 ≈ 3 帧 × 256×256 × 4 字节 ≈ 0.79 MB；全量 35595 样本 ≈ 28 GB。
+    # 全量训练务必加 --no-preload（逐条读 zarr），否则极易 OOM。
+    if (not cli.no_preload) and (len(train_idx) + len(val_idx) + len(test_idx)) > 4000:
+        _total = len(train_idx) + len(val_idx) + len(test_idx)
+        _gb = _total * 3 * IMAGE_SIZE * IMAGE_SIZE * 4 / 1e9
+        print(f'[DBG-007][WARN] preload=True 且总样本={_total} 会一次性读入约 '
+              f'{_gb:.1f} GB 内存；全量训练请加 --no-preload，否则极易 OOM。')
 
     dataloader_train, dataloader_vali, dataloader_test = load_data(
         batch_size=args.batch_size,
