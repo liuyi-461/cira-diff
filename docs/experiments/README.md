@@ -6,6 +6,8 @@
 
 使用 `templates/experiment_card.md`，文件命名为 `EXP-XXX-short-name.md`。
 
+在新窗口中让智能体自动补齐实验记录时，使用 `templates/experiment_record_prompt.md`；该文件是统一调用流程模板。
+
 ## 实验家族
 
 - `cira_diff/`：当前 baseline 和 reproduction gates；

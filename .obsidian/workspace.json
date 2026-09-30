@@ -1,0 +1,211 @@
+{
+  "main": {
+    "id": "cbd16b3957906287",
+    "type": "split",
+    "children": [
+      {
+        "id": "de1e0baebb4946ca",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "c3b1ca35643b6874",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "README.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "README"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "57ccc2bbf8c9d53a",
+    "type": "split",
+    "children": [
+      {
+        "id": "6689b7964c9d37ce",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "acc36bed9c364fcb",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-folder-closed",
+              "title": "文件列表"
+            }
+          },
+          {
+            "id": "6a319e89f9b546e3",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "搜索"
+            }
+          },
+          {
+            "id": "9f9aca19abc1b2e9",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-bookmark",
+              "title": "书签"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "5ca858abbd2bf7f9",
+    "type": "split",
+    "children": [
+      {
+        "id": "589dea5f774762b2",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "99ebdbdf287d792d",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "docs/experiments/cira_diff/EXP-001-cira-diff-data-audit.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "反向链接"
+            }
+          },
+          {
+            "id": "9c9b2cacdc2b1e21",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "docs/experiments/cira_diff/EXP-001-cira-diff-data-audit.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "出链"
+            }
+          },
+          {
+            "id": "d008a93abf0527fa",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "标签"
+            }
+          },
+          {
+            "id": "091e242a57a945cf",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "添加笔记属性"
+            }
+          },
+          {
+            "id": "88b38a7a4da380da",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "docs/experiments/cira_diff/EXP-001-cira-diff-data-audit.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "大纲"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:打开快速切换": false,
+      "graph:查看关系图谱": false,
+      "canvas:新建白板": false,
+      "daily-notes:打开/创建今天的日记": false,
+      "templates:插入模板": false,
+      "command-palette:打开命令面板": false,
+      "bases:新建数据库": false
+    }
+  },
+  "active": "c3b1ca35643b6874",
+  "lastOpenFiles": [
+    "docs/README.md",
+    "docs/experiments/README.md",
+    "docs/experiments/templates/experiment_card.md",
+    "docs/experiments/temporal_history/README.md",
+    "docs/experiments/templates/experiment_record_prompt.md",
+    "README.md",
+    "AGENTS.md",
+    "docs/experiments/cira_diff/EXP-001-cira-diff-data-audit.md",
+    "docs/experiments/baselines/README.md",
+    "docs/research/questions.md",
+    "docs/experiments/registry.md",
+    "docs/project/context.md",
+    "docs/project/architecture.md",
+    "docs/project/ai_prompt.md",
+    "docs/project/roadmap.md",
+    "docs/project/knowledge.md",
+    "docs/project/knowledge_gaps.md"
+  ]
+}
