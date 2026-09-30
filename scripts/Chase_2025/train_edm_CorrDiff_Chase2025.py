@@ -1,4 +1,4 @@
-# ################### Imports ########################
+#################### Imports ########################
 
 import torch
 import zarr
@@ -14,7 +14,9 @@ import matplotlib.pyplot as plt
 from diffusers.optimization import get_cosine_schedule_with_warmup
 import torch.nn.functional as F
 import gc
+import json
 import os 
+import subprocess
 import torch.distributed as dist
 from accelerate import Accelerator
 from tqdm.auto import tqdm
@@ -26,48 +28,36 @@ from diffusers.utils.torch_utils import randn_tensor
 from torch.utils.tensorboard import SummaryWriter
 
 
-# ################### \Imports ########################
+#################### \Imports ########################
 
 
-# ################### Classes ########################
+#################### Classes ########################
 
 @dataclass
 class TrainingConfig:
-    """ This should be probably in some sort of config file, but for now its here... """
-    #data things 
-    image_size = 256  #this assumes square images
-    train_batch_size = 45 #this is as big as I can fit on the GH200 [45,3,256,256]
-    
-    #training things 
-    num_epochs = 1000 #this should be similar to NVIDIA's StormCast 
-    gradient_accumulation_steps = 2 #this helped with stability, i think... 
-    learning_rate = 1e-4 #default value from butterflies example
-    lr_warmup_steps = 500 #default value from butterflies example
-    save_model_epochs = 1 #i like to save alot, doesnt cost much 
+    image_size = 256
+    train_batch_size = 22
+    val_batch_size = 22
+    num_epochs = 1000
+    gradient_accumulation_steps = 4
+    learning_rate = 1e-4
+    lr_warmup_steps = 500
+    save_model_epochs = 1
     mixed_precision = "fp16"
-    output_dir = "/mnt/data1/rchas1/edm_10_CorrDiff_TEST/"  # the local path to store the model 
-    push_to_hub = False 
+    output_dir = "/home/group1/26fall_aiclass/ly/cira-diff/outputs/corrdiff_full/"
+    push_to_hub = False
     hub_private_repo = False
-    overwrite_output_dir = True  
-    seed = 0 
-    restart = False #do you want to start from a previous training?
-    restart_path = None
-    dataset_path = "/mnt/data1/rchas1/diffusion_10_4_2inputs_v3_gh200_CorrDiff.zarr"
+    overwrite_output_dir = True
+    seed = 0
+    dataset_path = "/data1/satcast/edm_GOES_ch13_train_dataset_CorrDiff.zarr"
+    val_heldout_path = "/data1/satcast/edm_GOES_ch13_val_dataset_CorrDiff.zarr"
+    plot_images = True
+    images_idx = [3, 5, 10, 15]
+    P_mean = -1.2
+    P_std = 1.2
+    sigma_data = 0.5
     
-    #tensorboard things 
-    plot_images = True 
-    images_idx = [3,5,10,15] #these need to be smaller than train_batch_size 
     
-    #loss params (defaults to the edm paper)
-    P_mean=-1.2
-    P_std=1.2
-    sigma_data=0.5
-    
-    #early stopping things 
-    patience = 100  # Number of epochs to wait for improvement
-    min_delta = 1e-6  # Minimum change in loss to be considered as improvement
-    window_size = 5  # Define the window size for the moving average
-
     
 
 
@@ -124,10 +114,10 @@ class EDMPrecond(torch.nn.Module):
         c_noise = sigma.log() / 4
 
         # split out the images you want to generate and the condition, because the scaling will depend on this. 
-        x_noisy = torch.clone(x[:,0:self.generation_channels])
+        x_noisy = torch.clone(x[:, 0:self.generation_channels])
         
         #the condition
-        x_condition = torch.clone(x[:,self.generation_channels:])
+        x_condition = torch.clone(x[:, self.generation_channels:])
 
         
         #concatinate back with the scaling applied to only the the generation dimension (x_noisy)
@@ -195,295 +185,198 @@ class EDMLoss:
         loss = weight * ((denoised_images - clean_images) ** 2)
         
         return loss
-
-# class ZarrDataset(Dataset):
-#     """This is a new zarr instance of the dataset chunked at the desired batchsize to ensure the GPU is fed. """
-#     def __init__(self, zarr_store):
-#         self.store = zarr_store
-#         self.data = zarr.open(self.store, mode='r')
-#         self.length = self.data['input_images'].shape[0]
-
-#     def __len__(self):
-#         return self.length
-
-#     def __getitem__(self, idx):
-#         # Load data lazily
-#         input_image = self.data['input_images'][idx]
-#         output_image = self.data['output_images'][idx]
-#         return torch.tensor(output_image, dtype=torch.float16),torch.tensor(input_image, dtype=torch.float16)
+    
 
 class ZarrDataset(Dataset):
-    """
-    This is a new zarr instance of the dataset that loads all data into CPU memory to minimize I/O overhead.
-    """
     def __init__(self, zarr_store):
         self.store = zarr_store
         self.data = zarr.open(self.store, mode='r')
-        
-        # Load data into CPU memory
-        self.input_images = torch.tensor(self.data['input_images'][:], dtype=torch.float16, device='cpu')
-        self.output_images = torch.tensor(self.data['output_images'][:], dtype=torch.float16, device='cpu')
-        self.length = self.input_images.shape[0]
+        self.length = self.data['input_images'].shape[0]
 
     def __len__(self):
         return self.length
 
     def __getitem__(self, idx):
-        # Access data from memory (still on the CPU)
-        return self.output_images[idx], self.input_images[idx]
+        input_image = self.data['input_images'][idx]
+        output_image = self.data['output_images'][idx]
+        return torch.tensor(output_image, dtype=torch.float32), torch.tensor(input_image, dtype=torch.float32)
 
-# ################### \Classes ########################
 
-# ################### Funcs ########################
+class ZarrDatasetVal(Dataset):
+    def __init__(self, zarr_store):
+        self.store = zarr_store
+        self.data = zarr.open(self.store, mode='r')
+        self.length = self.data['input_images'].shape[0]
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, idx):
+        input_image = self.data['input_images'][idx]
+        output_image = self.data['output_images'][idx, 0]
+        return torch.tensor(output_image, dtype=torch.float32).unsqueeze(0), torch.tensor(input_image, dtype=torch.float32)
+
+#################### \Classes ########################
+
+#################### Funcs ########################
 
 def worker_init_fn(worker_id):
     os.sched_setaffinity(0, range(os.cpu_count())) 
     
-def train_loop(config, model, optimizer, dataset, lr_scheduler):
-    """ 
-    This is the main show! the training loop. 
-    
-    This is an amalgamation of several scripts but started with this one
-    - https://huggingface.co/docs/diffusers/tutorials/basic_training 
-    
-    """
-    
-    # Initialize accelerator and tensorboard logging
+def train_loop(config, model, optimizer, train_dataloader, lr_scheduler, val_heldout_dataloader=None, run_metadata=None):
     accelerator = Accelerator(
         mixed_precision=config.mixed_precision,
         gradient_accumulation_steps=config.gradient_accumulation_steps,
         log_with="tensorboard",
         project_dir=os.path.join(config.output_dir, "logs"),
     )
-    
-    #if you are on the headnode/gpu (i.e., do only once rather than for every GPU)
+
+    state_file = os.path.join(config.output_dir, "training_state.json")
+    accelerator_state_exists = os.path.exists(os.path.join(config.output_dir, "optimizer.bin"))
+    resume = accelerator_state_exists and os.path.exists(state_file)
+
     if accelerator.is_main_process:
-        #i haven't used this, this pushes to huggingface hubs i think. 
-        if config.push_to_hub:
-            repo_name = get_full_repo_name(Path(config.output_dir).name)
-            repo = Repository(config.output_dir, clone_from=repo_name)
-        elif config.output_dir is not None:
+        if config.output_dir is not None:
             os.makedirs(config.output_dir, exist_ok=True)
-        
-        #not sure what this does 
-        accelerator.init_trackers("train_example")
-        
-        if config.plot_images:
-            
-            #image writer for the tensorboard 
-            writer = SummaryWriter(config.output_dir + "logs/images")
-            #need a random seed for the edm process that we run after every epoch.         
-            rnd = StackedRandomGenerator('cuda',np.arange(0,config.train_batch_size,1).astype(int).tolist())
-            latents = rnd.randn([config.train_batch_size, 1, 256, 256],device='cuda')
+        accelerator.init_trackers("corrdiff_train")
+        if run_metadata is not None:
+            run_metadata["resume"] = resume
+            with open(os.path.join(config.output_dir, "run_metadata.json"), "w") as f:
+                json.dump(run_metadata, f, indent=2, default=str)
+            print(f"[Run metadata] written to {os.path.join(config.output_dir, 'run_metadata.json')}")
 
-            #setup the dataset now WITHOUT shuffling, for consistent eval images 
-            train_dataloader = torch.utils.data.DataLoader(dataset, batch_size=config.train_batch_size, shuffle=False)
+    data_mean = torch.tensor(-0.0009)
+    data_std = torch.tensor(0.0807)
 
-            #grab the first batch of data for those test images (should probably make a seperate file here)
-            for step, batch in enumerate(train_dataloader):
-                        # these are the images we want to make 
-                        clean_images_eval = batch[0].to('cuda')
+    if config.plot_images and val_heldout_dataloader is not None:
+        writer = SummaryWriter(os.path.join(config.output_dir, "logs/images"))
+        rnd = StackedRandomGenerator(accelerator.device, np.arange(0, config.train_batch_size, 1).astype(int).tolist())
+        latents = rnd.randn([config.train_batch_size, 1, 256, 256], device=accelerator.device)
+        plot_iter = iter(val_heldout_dataloader)
+        clean_images_eval, condition_images_eval = next(plot_iter)
+        clean_images_eval = clean_images_eval.to(accelerator.device)
+        condition_images_eval = condition_images_eval.to(accelerator.device)
+        residual_truth_eval = clean_images_eval * data_std + data_mean
+        for i in np.arange(0, len(config.images_idx)):
+            image = condition_images_eval[config.images_idx[i], 0:1].squeeze(0).unsqueeze(-1).cpu()
+            color_image = torch.tensor(colorize(image, vmin=-6, vmax=4, cmap='Spectral_r')).permute(2, 0, 1)
+            writer.add_image("UNet forecast (cond ch0)", color_image, 0)
+            image = condition_images_eval[config.images_idx[i], 1:2].squeeze(0).unsqueeze(-1).cpu()
+            color_image = torch.tensor(colorize(image, vmin=-6, vmax=4, cmap='Spectral_r')).permute(2, 0, 1)
+            writer.add_image("CorrDiff forecast (cond ch1)", color_image, 1)
+            image = condition_images_eval[config.images_idx[i], 2:3].squeeze(0).unsqueeze(-1).cpu()
+            color_image = torch.tensor(colorize(image, vmin=-6, vmax=4, cmap='Spectral_r')).permute(2, 0, 1)
+            writer.add_image("t-1 forecast (cond ch2)", color_image, 2)
+            image = residual_truth_eval[config.images_idx[i], 0:1].squeeze(0).unsqueeze(-1).cpu()
+            color_image = torch.tensor(colorize(image, vmin=-6, vmax=4, cmap='Spectral_r')).permute(2, 0, 1)
+            writer.add_image("Residual truth", color_image, 3)
+            full_forecast = condition_images_eval[config.images_idx[i], 0:1].squeeze(0).unsqueeze(-1).cpu() + residual_truth_eval[config.images_idx[i], 0:1].squeeze(0).unsqueeze(-1).cpu()
+            color_image = torch.tensor(colorize(full_forecast, vmin=-6, vmax=4, cmap='Spectral_r')).permute(2, 0, 1)
+            writer.add_image("Full forecast (UNet + residual truth)", color_image, 4)
 
-                        #these are the condition 
-                        condition_images_eval = batch[1].to('cuda')
-                        break 
-
-            del train_dataloader 
-            
-            #undo the scaling before adding to the original image 
-            data_mean = torch.tensor(-0.0009)
-            data_std = torch.tensor(0.0807)
-
-            clean_images_eval = clean_images_eval*data_std + data_mean
-            
-            for i in np.arange(0,len(config.images_idx)):
-                #reshape image for adding a color image to the tensorboard 
-                image = condition_images_eval[config.images_idx[i],0:1].squeeze(0).unsqueeze(-1).cpu()
-                #add color and convert shapes back. 
-                color_image = torch.tensor(colorize(image,vmin=-6,vmax=4,cmap='Spectral_r')).permute(2, 0, 1)
-
-                #write the image to the tensorboard 
-                writer.add_image("Example {}".format(i), color_image, 0)
-
-                #do the same thing for the second image. 
-                image = condition_images_eval[config.images_idx[i],1:2].squeeze(0).unsqueeze(-1).cpu()
-                color_image = torch.tensor(colorize(image,vmin=-6,vmax=4,cmap='Spectral_r')).permute(2, 0, 1)
-                writer.add_image("Example {}".format(i), color_image, 1)
-
-                #do the same thing for 'truth'
-                image = clean_images_eval[config.images_idx[i],0:1].squeeze(0).unsqueeze(-1).cpu() + condition_images_eval[config.images_idx[i],2:3].squeeze(0).unsqueeze(-1).cpu()
-                color_image = torch.tensor(colorize(image,vmin=-6,vmax=4,cmap='Spectral_r')).permute(2, 0, 1)
-                writer.add_image("Example {}".format(i), color_image, 2)
-        
-        #properly setup the dataset now with shuffling 
-        train_dataloader = torch.utils.data.DataLoader(dataset, batch_size=config.train_batch_size, shuffle=True,num_workers=8,
-                                                       pin_memory=True,worker_init_fn = worker_init_fn)
-        
-        if config.restart:
-            start_epoch, global_step = load_checkpoint(config.restart_path + 'checkpoint.pth', model, optimizer, lr_scheduler, accelerator)
-            epochs = np.arange(start_epoch,config.num_epochs)
-        else:
-            #iterator to see how many gradient steps have been done
-            global_step = 0
-            epochs = range(config.num_epochs)
-            
-
-    # Prepare everything
-    # There is no specific order to remember, you just need to unpack the
-    # objects in the same order you gave them to the prepare method.
     model, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
         model, optimizer, train_dataloader, lr_scheduler
     )
-    
-    #initalize early stopping stuff
-    best_loss = float('inf') 
-    no_improvement_count = 0
-    loss_history = [] 
-    
-    
-    #define loss, you can change the sigma vals here (i.e., hyperparameters), change them in the config class
-    loss_fn = EDMLoss(P_mean=config.P_mean,P_std=config.P_std,sigma_data=config.sigma_data)
-    
-    # Now you train the model
-    for epoch in epochs:
-        #this is for the cmd line
+
+    best_independent_val_loss = float('inf')
+    best_independent_epoch = -1
+
+    if resume:
+        accelerator.load_state(config.output_dir)
+        with open(state_file) as f:
+            state = json.load(f)
+        start_epoch = state["epoch"] + 1
+        global_step = state["global_step"]
+        best_independent_val_loss = state.get("best_independent_val_loss", float('inf'))
+        best_independent_epoch = state.get("best_independent_epoch", -1)
+        print(f"[Resume] loaded from {config.output_dir}, resuming at epoch {start_epoch}, global_step={global_step}, best_independent_val={best_independent_val_loss:.6f} at epoch {best_independent_epoch}")
+    else:
+        start_epoch = 0
+        global_step = 0
+        print(f"[Fresh start] training from epoch 0, no prior checkpoint")
+
+    loss_fn = EDMLoss(P_mean=config.P_mean, P_std=config.P_std, sigma_data=config.sigma_data)
+
+    for epoch in range(start_epoch, config.num_epochs):
         progress_bar = tqdm(total=len(train_dataloader), disable=not accelerator.is_local_main_process)
         progress_bar.set_description(f"Epoch {epoch}")
-
-        #initalize loss to keep track of the mean loss across all batches in this epoch 
         epoch_loss = torch.tensor(0.0, device=accelerator.device)
-        
+
         for step, batch in enumerate(train_dataloader):
-            
-            #my data loader returns [TARGET, CONDITION],I seperate them here just to be clear 
-            
-            #TARGET
             clean_images = batch[0]
-
-            #CONDITION
             condition_images = batch[1]
-            
-            #this is the autograd steps within the .accumulate bit (this is important for multi-GPU training)
             with accelerator.accumulate(model):
-
-                #send data into loss func and get the loss (the model call is in here)
-                per_sample_loss = loss_fn(model,clean_images, condition_images)
-
-                #in the loss_fn, it returns the squarred error (per pixel basis), we need the mean (across the batch) for the loss  
+                per_sample_loss = loss_fn(model, clean_images, condition_images)
                 loss = per_sample_loss.mean()
-                
-                #calc backprop 
                 accelerator.backward(loss)
-                
-                #this is needed to enable gradient accumulation for some reason 
                 if accelerator.sync_gradients:
-                    #clip gradients (leftover from Butterflies example)
                     accelerator.clip_grad_norm_(model.parameters(), 1.0)
-                    
-                #step things now 
                 optimizer.step()
                 lr_scheduler.step()
                 optimizer.zero_grad()
-                
-            
-            # Accumulate epoch loss on each GPU seperately 
             epoch_loss += loss.detach()
-            
-            #log things to the cmd line 
             progress_bar.update(1)
             logs = {"loss": loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0], "step": global_step}
             progress_bar.set_postfix(**logs)
-            #push the same logs to the tensorboard
             accelerator.log(logs, step=global_step)
-            #step the global steps, go onto the next batch 
             global_step += 1
-            
-            
-            
-        #now that we saw the dataset once, lets do some book keeping. 
-        
-        # Synchronize epoch loss across devices, this will just concat the two 
+
         epoch_loss = accelerator.gather(epoch_loss)
+        mean_epoch_loss = epoch_loss.sum() / (len(train_dataloader) * accelerator.num_processes)
+        accelerator.log({"epoch_loss": mean_epoch_loss.item(), "epoch": epoch}, step=epoch)
 
-        # Sum up the losses across all GPUs
-        total_epoch_loss = epoch_loss.sum()
+        mean_independent_val_loss = float('nan')
+        if val_heldout_dataloader is not None:
+            unwrapped_model = accelerator.unwrap_model(model)
+            independent_val_loss_acc = torch.tensor(0.0, device=accelerator.device)
+            n_batches = 0
+            with torch.no_grad():
+                for batch in tqdm(val_heldout_dataloader, total=len(val_heldout_dataloader),
+                                  desc=f"Independent Val", disable=not accelerator.is_local_main_process):
+                    clean_v = batch[0].to(accelerator.device)
+                    cond_v = batch[1].to(accelerator.device)
+                    sigma_min_val = 0.002
+                    sigma_val = torch.ones(cond_v.shape[0], 1, 1, 1, device=accelerator.device) * sigma_min_val
+                    model_input = torch.cat([clean_v, cond_v], dim=1)
+                    pred = unwrapped_model(model_input, sigma_val)
+                    independent_val_loss_acc += F.mse_loss(pred, clean_v).detach()
+                    n_batches += 1
+            if n_batches > 0:
+                mean_independent_val_loss = (independent_val_loss_acc / n_batches).item()
+                accelerator.log({"independent_val_loss": mean_independent_val_loss, "epoch": epoch}, step=epoch)
 
-        # the batches are split from the train_dataloader to each GPU
-        total_samples_processed = len(train_dataloader) * accelerator.num_processes
-
-        # Calculate mean epoch loss by dividing by the total number of batches proccessed 
-        mean_epoch_loss = total_epoch_loss / total_samples_processed
-        
-        # Print or log the average epoch loss, need to convert to scalar to get tensorboard to work (using .item())
-        logs = {"epoch_loss": mean_epoch_loss.item(), "epoch": epoch}
-        accelerator.log(logs, step=epoch)
-
-        #accumulate rolling mean for early stopping 
-        loss_history.append(mean_epoch_loss.item())
-        
-        # Calculate the moving average if enough epochs have passed
-        if len(loss_history) >= config.window_size:
-            moving_average = sum(loss_history[-config.window_size:]) / config.window_size
-            logs = {"moving_epoch_loss": moving_average, "epoch": epoch}
-            accelerator.log(logs, step=epoch)
-
-            # Check for improvement in the moving_average
-            if moving_average < (best_loss - config.min_delta):
-                best_loss = moving_average
-                no_improvement_count = 0
-            else:
-                no_improvement_count += 1
-        
-        # This is the eval and saving step 
         if accelerator.is_main_process:
-                
-            #this is to save the model 
-            if (epoch + 1) % config.save_model_epochs == 0 or epoch == config.num_epochs - 1:
-                if config.push_to_hub:
-                    repo.push_to_hub(commit_message=f"Epoch {epoch}", blocking=True)
-                else:
-                    
-                    #need to grab the unwrapped diffusers model from EDMPrecond (old way)
-                    #accelerator.unwrap_model(model).model.save_pretrained(config.output_dir)
-                    
-                    #save out the checkpoint for restarts 
-                    save_checkpoint(model, optimizer, lr_scheduler, epoch, global_step, accelerator, config.output_dir + 'checkpoint.pth')
-                    
-                    if config.plot_images:
-                        #run a batch of images through for tensorboard (takes < 1 min)
-                        images_batch = edm_sampler(model,latents,condition_images_eval,num_steps=18)
-                        
-                        #undo the scaling before adding to the original image 
-                        data_mean = torch.tensor(-0.0009)
-                        data_std = torch.tensor(0.0807)
-                        
-                        images_batch = images_batch*data_std + data_mean
+            if not (mean_independent_val_loss != mean_independent_val_loss):
+                if mean_independent_val_loss < best_independent_val_loss - 1e-12:
+                    best_independent_val_loss = mean_independent_val_loss
+                    best_independent_epoch = epoch
+                    best_dir = os.path.join(config.output_dir, "best_corrdiff")
+                    os.makedirs(best_dir, exist_ok=True)
+                    accelerator.unwrap_model(model).model.save_pretrained(best_dir)
+                    print(f"  [Best checkpoint] independent_val improved to {best_independent_val_loss:.6f} (epoch {epoch}) -> {best_dir}")
 
-                        for i in np.arange(0,len(config.images_idx)):
+            state = {
+                "epoch": epoch,
+                "global_step": global_step,
+                "train_loss": mean_epoch_loss.item(),
+                "independent_val_loss": mean_independent_val_loss,
+                "best_independent_val_loss": best_independent_val_loss,
+                "best_independent_epoch": best_independent_epoch,
+            }
+            with open(state_file, "w") as f:
+                json.dump(state, f, indent=2)
+            accelerator.save_state(config.output_dir)
+            accelerator.unwrap_model(model).model.save_pretrained(config.output_dir)
+            print(f"[Checkpoint] saved epoch {epoch} to {config.output_dir}  |  best_independent_val={best_independent_val_loss:.6f} at epoch {best_independent_epoch}")
 
-                            #reshape the image so we can add color to the tensorboard
-                            image = images_batch[config.images_idx[i]].squeeze(0).unsqueeze(-1).cpu().numpy()+ condition_images_eval[config.images_idx[i],2:3].squeeze(0).unsqueeze(-1).cpu().numpy()
-                            #colorize the image 
-                            color_image = torch.tensor(colorize(image,vmin=-6,vmax=4,cmap='Spectral_r')).permute(2, 0, 1)
+            if config.plot_images:
+                images_batch = edm_sampler(model, latents, condition_images_eval, num_steps=18)
+                residual_pred = images_batch * data_std + data_mean
+                for i in np.arange(0, len(config.images_idx)):
+                    image = residual_pred[config.images_idx[i]].squeeze(0).unsqueeze(-1).cpu().numpy()
+                    color_image = torch.tensor(colorize(image, vmin=-3, vmax=3, cmap='Spectral_r')).permute(2, 0, 1)
+                    writer.add_image("Residual prediction", color_image, epoch)
 
-                            #add to board 
-                            writer.add_image("Output Example {}".format(i), color_image, epoch)
-
-
-                    
-
-
-        # Check if training should be stopped due to lack of improvement (e.g., early stopping)
-        if no_improvement_count >= config.patience:
-            print(f"Early stopping triggered after {config.patience} epochs without improvement.")
-                # Check if multi-GPU is being used
-            if accelerator.num_processes > 1:
-                print(f"Killing multi-GPU processes using dist.barrier() and dist.destroy_process_group()")
-                # Signal all processes to stop
-                dist.barrier()  # Ensure all processes are synchronized
-                dist.destroy_process_group() 
-            break
-        #run some cleanup, because leaks             
         gc.collect()
 
 def edm_sampler(net, latents, condition_images, randn_like=torch.randn_like,num_steps=18, sigma_min=0.002, sigma_max=80, rho=7,
@@ -636,7 +529,7 @@ def save_checkpoint(model, optimizer, lr_scheduler, epoch, step, accelerator, ch
     if accelerator.is_main_process:
         torch.save(checkpoint, checkpoint_path)
         print(f"Checkpoint saved at epoch {epoch}, step {step}.")
-
+    
 def load_checkpoint(checkpoint_path, model, optimizer, lr_scheduler, accelerator):
     """ A function from chatGPT to help load checkpoints training restarts """ 
     checkpoint = torch.load(checkpoint_path, map_location=accelerator.device)
@@ -648,34 +541,41 @@ def load_checkpoint(checkpoint_path, model, optimizer, lr_scheduler, accelerator
     print(f"Checkpoint loaded. Resuming from epoch {epoch}, step {step}.")
     return epoch, step
 
-# ################### \Funcs ########################
+#################### \Funcs ########################
 
+import subprocess
 
-#initalize config 
 config = TrainingConfig()
 
-# Initialize the dataset
 dataset = ZarrDataset(config.dataset_path)
+val_dataset_heldout = ZarrDatasetVal(config.val_heldout_path)
 
-#go ahead and build a UNET, this was the exact same as the butterfly example, but different channels. This is a big model.. 
-# in_channels = noisy_dim + condition_channels. 
+print(f"Train samples: {len(dataset)}  independent val zarr: {len(val_dataset_heldout)}")
+
+train_dataloader = torch.utils.data.DataLoader(
+    dataset, batch_size=config.train_batch_size, shuffle=True, num_workers=4, pin_memory=True
+)
+val_heldout_dataloader = torch.utils.data.DataLoader(
+    val_dataset_heldout, batch_size=config.val_batch_size, shuffle=False, num_workers=4, pin_memory=True
+)
+
 model = UNet2DModel(
-    sample_size=config.image_size,  # the target image resolution
-    in_channels=4,  # the number of input channels, 3 for RGB images
-    out_channels=1,  # the number of output channels
-    layers_per_block=2,  # how many ResNet layers to use per UNet block
-    block_out_channels=(128, 128, 256, 256, 512, 512),  # the number of output channels for each UNet block
+    sample_size=config.image_size,
+    in_channels=4,
+    out_channels=1,
+    layers_per_block=2,
+    block_out_channels=(128, 128, 256, 256, 512, 512),
     down_block_types=(
-        "DownBlock2D",  # a regular ResNet downsampling block
         "DownBlock2D",
         "DownBlock2D",
         "DownBlock2D",
-        "AttnDownBlock2D",  # a ResNet downsampling block with spatial self-attention
+        "DownBlock2D",
+        "AttnDownBlock2D",
         "DownBlock2D",
     ),
     up_block_types=(
-        "UpBlock2D",  # a regular ResNet upsampling block
-        "AttnUpBlock2D",  # a ResNet upsampling block with spatial self-attention
+        "UpBlock2D",
+        "AttnUpBlock2D",
         "UpBlock2D",
         "UpBlock2D",
         "UpBlock2D",
@@ -683,16 +583,48 @@ model = UNet2DModel(
     ),
 )
 
-#wrap diffusers/pytorch model 
-model_wrapped = EDMPrecond(1,model)
+model_wrapped = EDMPrecond(1, model)
 
-#left this the same as the butterfly example 
 optimizer = torch.optim.AdamW(model_wrapped.model.parameters(), lr=config.learning_rate)
 lr_scheduler = get_cosine_schedule_with_warmup(
     optimizer=optimizer,
     num_warmup_steps=config.lr_warmup_steps,
-    num_training_steps=(dataset.length * config.num_epochs),
+    num_training_steps=(len(train_dataloader) * config.num_epochs),
 )
 
-#main method here! 
-train_loop(config, model_wrapped, optimizer, dataset, lr_scheduler)
+git_commit = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode().strip()
+git_branch = subprocess.check_output(['git', 'rev-parse', '--abbrev-ref', 'HEAD']).decode().strip()
+run_metadata = {
+    "git_commit": git_commit,
+    "git_branch": git_branch,
+    "dataset_sizes": {
+        "train": len(dataset),
+        "independent_val": len(val_dataset_heldout),
+    },
+    "normalization": {"mean": -0.0009, "std": 0.0807},
+    "architecture": "CorrDiff: EDMPrecond(UNet2DModel) predicting residual (forecast - truth)",
+    "in_channels": 4,
+    "condition_channels": 3,
+    "condition_semantics": ["UNet forecast", "CorrDiff forecast", "t-1 forecast"],
+    "output_channels": 1,
+    "output_semantics": "residual (forecast - truth)",
+    "layers_per_block": 2,
+    "block_out_channels": [128, 128, 256, 256, 512, 512],
+    "optimizer": "AdamW",
+    "learning_rate": config.learning_rate,
+    "lr_scheduler": "cosine_schedule_with_warmup",
+    "lr_warmup_steps": config.lr_warmup_steps,
+    "batch_size": config.train_batch_size,
+    "gradient_accumulation_steps": config.gradient_accumulation_steps,
+    "effective_batch_size": config.train_batch_size * config.gradient_accumulation_steps,
+    "num_epochs": config.num_epochs,
+    "training_protocol": "fixed_epochs_with_independent_val_best_checkpoint",
+    "mixed_precision": config.mixed_precision,
+    "edm_P_mean": config.P_mean,
+    "edm_P_std": config.P_std,
+    "edm_sigma_data": config.sigma_data,
+    "slurm_job_id": subprocess.check_output(['bash', '-c', 'echo ${SLURM_JOB_ID:-N/A}']).decode().strip(),
+}
+
+train_loop(config, model_wrapped, optimizer, train_dataloader, lr_scheduler,
+           val_heldout_dataloader=val_heldout_dataloader, run_metadata=run_metadata)

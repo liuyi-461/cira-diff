@@ -19,18 +19,24 @@ from accelerate import Accelerator
 from tqdm.auto import tqdm
 from pathlib import Path
 import os
+import json
+import subprocess
 import math
 from typing import List, Optional, Tuple, Union
 from diffusers.utils.torch_utils import randn_tensor
 from torch.utils.tensorboard import SummaryWriter
 
 class ZarrDataset(Dataset):
-    def __init__(self, zarr_store, max_samples=None):
+    """
+    This is a new zarr instance of the dataset that loads all data into CPU memory to minimize I/O overhead.
+    """
+    def __init__(self, zarr_store):
         self.store = zarr_store
         self.data = zarr.open(self.store, mode='r')
-        n = max_samples if max_samples else self.data['input_images'].shape[0]
-        self.input_images = torch.tensor(self.data['input_images'][:n], dtype=torch.float16, device='cpu')
-        self.output_images = torch.tensor(self.data['output_images'][:n], dtype=torch.float16, device='cpu')
+        
+        # Load data into CPU memory
+        self.input_images = torch.tensor(self.data['input_images'][:], dtype=torch.float16, device='cpu')
+        self.output_images = torch.tensor(self.data['output_images'][:], dtype=torch.float16, device='cpu')
         self.length = self.input_images.shape[0]
 
     def __len__(self):
@@ -42,7 +48,36 @@ class ZarrDataset(Dataset):
 
 # Initialize the dataset
 zarr_store = '/data1/satcast/edm_GOES_ch13_train_dataset.zarr'
-dataset = ZarrDataset(zarr_store, max_samples=1)
+dataset = ZarrDataset(zarr_store)
+val_zarr_store = '/data1/satcast/edm_GOES_ch13_validation_dataset.zarr'
+val_dataset_heldout = ZarrDataset(val_zarr_store)
+
+import random as _random
+_SEED = int(os.environ.get("SEED", "42"))
+torch.manual_seed(_SEED)
+torch.cuda.manual_seed_all(_SEED)
+_random.seed(_SEED)
+np.random.seed(_SEED)
+splits = torch.utils.data.random_split(dataset, [0.8, 0.2])
+
+ds_train = splits[0]
+ds_val = splits[1]
+
+_BS = 24
+
+train_dataloader = torch.utils.data.DataLoader(
+    ds_train, batch_size=_BS, shuffle=True, num_workers=4, pin_memory=True
+)
+
+val_dataloader = torch.utils.data.DataLoader(
+    ds_val, batch_size=_BS, shuffle=False, num_workers=4, pin_memory=True
+)
+
+val_heldout_dataloader = torch.utils.data.DataLoader(
+    val_dataset_heldout, batch_size=_BS, shuffle=False, num_workers=4, pin_memory=True
+)
+
+print(f"Train samples: {len(ds_train)}, held-out val (80/20 split): {len(ds_val)}, independent val zarr: {len(val_dataset_heldout)}")
 
 # ################### \Imports ########################
 
@@ -53,248 +88,269 @@ dataset = ZarrDataset(zarr_store, max_samples=1)
 class TrainingConfig:
     """ This should be probably in some sort of config file, but for now its here... """
     image_size = 256  
-    train_batch_size = 1
-    val_batch_size = 1
-    num_epochs = 1000
-    gradient_accumulation_steps = 1
+    train_batch_size = 24
+    val_batch_size = 24
+    num_epochs = 210
+    gradient_accumulation_steps = 2
     learning_rate = 1e-4 
-    lr_warmup_steps = 10
-    save_model_epochs = 100
+    lr_warmup_steps = 500
+    save_model_epochs = 1 
     mixed_precision = "fp16" 
-    output_dir = "/home/group1/26fall_aiclass/ly/cira-diff/outputs/vanilla_unet_overfit/"
+    output_dir = os.environ.get("OUTPUT_DIR", "/home/group1/26fall_aiclass/ly/cira-diff/outputs/vanilla_unet_full/")
     push_to_hub = False
     hub_private_repo = False
     overwrite_output_dir = True  
-    seed = 0
+    seed = 0 
 
 # ################### \Classes ########################
 
 # ################### Funcs ########################
 
-def train_loop(config, model, optimizer, train_dataloader, lr_scheduler, val_dataloader):
+def train_loop(config, model, optimizer, train_dataloader, lr_scheduler, val_dataloader, val_heldout_dataloader=None):
     """ 
     This is the main show! the training loop 
     """
     
-    # Initialize accelerator and tensorboard logging
     accelerator = Accelerator(
         mixed_precision=config.mixed_precision,
         gradient_accumulation_steps=config.gradient_accumulation_steps,
         log_with="tensorboard",
         project_dir=os.path.join(config.output_dir, "logs"),
     )
+    accelerator.wait_for_everyone()
+
+    state_file = os.path.join(config.output_dir, "training_state.json")
+    accelerator_state_exists = os.path.exists(os.path.join(config.output_dir, "optimizer.bin"))
+    resume = accelerator_state_exists and os.path.exists(state_file)
+
     if accelerator.is_main_process:
-        if config.push_to_hub:
-            repo_name = get_full_repo_name(Path(config.output_dir).name)
-            repo = Repository(config.output_dir, clone_from=repo_name)
-        elif config.output_dir is not None:
-            os.makedirs(config.output_dir, exist_ok=True)
+        os.makedirs(config.output_dir, exist_ok=True)
         accelerator.init_trackers("train_example")
 
-        #Stuff to have an image show up 
         writer = SummaryWriter(os.path.join(config.output_dir, "logs/images"))
-                #define random noise/seed vectors, here is enough seeds to run one batch of data through (i.e., one image per batch)
 
-        #grab a batch of data 
         for step, batch in enumerate(train_dataloader):
-                    # Sep. label 
-                    clean_images_eval = batch[0].to('cuda')
-
-                    #Sep. conditions
-                    condition_images_eval = batch[1].to('cuda')
-                    break 
+            clean_images_eval = batch[0].to(accelerator.device)
+            condition_images_eval = batch[1].to(accelerator.device)
+            break 
                     
-        #colorize an image 
         image = condition_images_eval[0,0:1].squeeze(0).unsqueeze(-1).cpu()
         color_image = torch.tensor(colorize(image,vmin=-4,vmax=2,cmap='Spectral_r')).permute(2, 0, 1)
-        
-        #add in the input images
         writer.add_image("Training Data", color_image, 0)
         
-        #colorize an image 
         image = condition_images_eval[0,1:2].squeeze(0).unsqueeze(-1).cpu()
         color_image = torch.tensor(colorize(image,vmin=-4,vmax=2,cmap='Spectral_r')).permute(2, 0, 1)
         writer.add_image("Training Data", color_image, 1)
 
-
-        #colorize an image 
         image = clean_images_eval[0,0:1].squeeze(0).unsqueeze(-1).cpu()
         color_image = torch.tensor(colorize(image,vmin=-4,vmax=2,cmap='Spectral_r')).permute(2, 0, 1)
         writer.add_image("Training Data", color_image, 2)
         writer.add_image("Slider", color_image, 0)
         
-    # Prepare everything
-    # There is no specific order to remember, you just need to unpack the
-    # objects in the same order you gave them to the prepare method.
     model, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
         model, optimizer, train_dataloader, lr_scheduler
     )
 
-    #iterator to see how many gradient steps have been done
-    global_step = 0
-    
-    # Define parameters for early stopping, TODO: this needs to be in the config step 
-    patience = 10  # Number of epochs to wait for improvement
-    min_delta = 1e-6  # Minimum change in loss to be considered as improvement
-    best_loss = float('inf') #fill with inf to start 
-    no_improvement_count = 0
-    window_size = 5  # Define the window size for the moving average
-    loss_history = [] # Initialize a list to store the recent losses
-    
-    #define loss 
+    accelerator.wait_for_everyone()
+
+    if resume:
+        accelerator.load_state(config.output_dir)
+        with open(state_file) as f:
+            state = json.load(f)
+        start_epoch = state["epoch"] + 1
+        global_step = state["global_step"]
+        best_moving_val_loss = state["best_moving_val_loss"]
+        best_internal_val_loss = state.get("best_internal_val_loss", float('inf'))
+        best_internal_epoch = state.get("best_internal_epoch", -1)
+        no_improvement_count = state["no_improvement_count"]
+        loss_history = state["loss_history"]
+        if accelerator.is_main_process:
+            print(f"[Resume] epoch {state['epoch']} -> start_epoch {start_epoch}, global_step={global_step}, best_internal_val={best_internal_val_loss:.6f}")
+    else:
+        start_epoch = 0
+        global_step = 0
+        best_moving_val_loss = float('inf')
+        best_internal_val_loss = float('inf')
+        best_internal_epoch = -1
+        no_improvement_count = 0
+        loss_history = []
+
+    if accelerator.is_main_process and not resume:
+        try:
+            repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            git_commit = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], cwd=repo_root, stderr=subprocess.DEVNULL).decode().strip()
+            git_branch = subprocess.check_output(["git", "branch", "--show-current"], cwd=repo_root, stderr=subprocess.DEVNULL).decode().strip()
+        except Exception:
+            git_commit = "unknown"
+            git_branch = "unknown"
+        run_meta = {
+            "git_commit": git_commit,
+            "git_branch": git_branch,
+            "dataset_sizes": {"train": len(ds_train), "internal_val": len(ds_val), "independent_val": len(val_dataset_heldout)},
+            "split_seed": 42,
+            "normalization": {"mean": 0.0, "std": 1.0},
+            "architecture": "UNet2DModel",
+            "in_channels": 2, "out_channels": 1,
+            "layers_per_block": 2,
+            "block_out_channels": (128, 128, 256, 256, 512, 512),
+            "down_block_types": ("DownBlock2D", "DownBlock2D", "DownBlock2D", "DownBlock2D", "AttnDownBlock2D", "DownBlock2D"),
+            "up_block_types": ("UpBlock2D", "AttnUpBlock2D", "UpBlock2D", "UpBlock2D", "UpBlock2D", "UpBlock2D"),
+            "optimizer": "AdamW", "learning_rate": config.learning_rate,
+            "lr_scheduler": "cosine_schedule_with_warmup",
+            "lr_warmup_steps": config.lr_warmup_steps,
+            "batch_size": config.train_batch_size,
+            "gradient_accumulation_steps": config.gradient_accumulation_steps,
+            "effective_batch_size": config.train_batch_size * config.gradient_accumulation_steps,
+            "num_epochs": config.num_epochs,
+            "early_stopping_patience": 10,
+            "early_stopping_min_delta": 1e-6,
+            "early_stopping_window_size": 5,
+            "early_stopping_criterion": "internal_val_moving_average",
+            "mixed_precision": config.mixed_precision,
+            "loss": "MSE",
+            "slurm_job_id": os.environ.get("SLURM_JOB_ID", "N/A"),
+            "resume": False,
+        }
+        with open(os.path.join(config.output_dir, "run_metadata.json"), "w") as f:
+            json.dump(run_meta, f, indent=2)
+        print(f"[Run metadata] written to {os.path.join(config.output_dir, 'run_metadata.json')}")
+
+    patience = 10
+    min_delta = 1e-6
+    window_size = 5
     loss_fn = torch.nn.MSELoss(reduction='none')
     
      
-    # Now you train the model
-    for epoch in range(config.num_epochs):
-        #put model in training mode
+    for epoch in range(start_epoch, config.num_epochs):
         model.train()
-        
-        #this is for the cmd line
         progress_bar = tqdm(total=len(train_dataloader), disable=not accelerator.is_local_main_process)
         progress_bar.set_description(f"Epoch {epoch}")
-
-        #initalize loss to keep track of the mean loss across all batches in this epoch 
         epoch_loss = torch.tensor(0.0, device=accelerator.device)
         
         for step, batch in enumerate(train_dataloader):
-            
-            #my data loader returns [clean_images,condition_images],I seperate them here just to be clear 
-            # Sep. label 
             clean_images = batch[0]
-
-            #Sep. conditions
             condition_images = batch[1]
             
-            #this is the autograd steps within the .accumulate bit (this is important for multi-GPU training)
             with accelerator.accumulate(model):
-                
-                yhat = model(condition_images,torch.zeros(condition_images.shape[0]).to(condition_images.device), return_dict=False)[0]
-                
-                #send data into loss func and get the loss (the model call is in here)
-                loss = loss_fn(clean_images.to(torch.float),yhat.to(torch.float)).mean()
-                
-                #calc backprop 
+                yhat = model(condition_images, torch.zeros(condition_images.shape[0]).to(accelerator.device), return_dict=False)[0]
+                loss = loss_fn(clean_images.to(torch.float), yhat.to(torch.float)).mean()
                 accelerator.backward(loss)
-                
-                #step 
                 optimizer.step()
                 lr_scheduler.step()
                 optimizer.zero_grad()
-                
             
-            # Accumulate epoch loss on each GPU seperately 
             epoch_loss += loss.detach()
-            
-            #log things on tensorboard 
             progress_bar.update(1)
             logs = {"loss": loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0], "step": global_step}
             progress_bar.set_postfix(**logs)
             accelerator.log(logs, step=global_step)
             global_step += 1
-            
 
-        # Synchronize epoch loss across devices, this will just concat the two 
         epoch_loss = accelerator.gather(epoch_loss)
-
-        # Sum up the losses across all GPUs
-        total_epoch_loss = epoch_loss.sum()
-
-        # the batches are split from the train_dataloader to each GPU
-        total_samples_processed = len(train_dataloader) * accelerator.num_processes
-
-        # Calculate mean epoch loss by dividing by the total number of batches proccessed 
-        mean_epoch_loss = total_epoch_loss / total_samples_processed
+        mean_epoch_loss = epoch_loss.sum() / (len(train_dataloader) * accelerator.num_processes)
         
-        #put model in eval mode
         model.eval()
         
-        #this is for the cmd line
-        progress_bar2 = tqdm(total=len(val_dataloader), disable=not accelerator.is_local_main_process)
-        progress_bar2.set_description(f"Validation Steps")
-        
-        #No need to track gradients here, ideally this should be just on one GPU... 
+        # --- Internal val (80/20 split, early stopping criterion) ---
+        internal_val_loss_acc = torch.tensor(0.0, device=accelerator.device)
         with torch.no_grad():
-            #initalize validation total mean loss 
-            val_loss = torch.tensor(0.0, device='cuda:0')
-            for step, batch in enumerate(val_dataloader):
-                #my data loader returns [clean_images,condition_images],I seperate them here just to be clear 
-                # Sep. label 
-                clean_images = batch[0].to('cuda:0')
+            for batch in tqdm(val_dataloader, total=len(val_dataloader), desc=f"Internal Val", disable=not accelerator.is_local_main_process):
+                clean_images = batch[0].to(accelerator.device)
+                condition_images = batch[1].to(accelerator.device)
+                yhat = model(condition_images, torch.zeros(condition_images.shape[0], device=accelerator.device), return_dict=False)[0]
+                loss = loss_fn(clean_images.to(torch.float), yhat.to(torch.float)).mean()
+                internal_val_loss_acc += loss.detach()
+        mean_internal_val_loss = internal_val_loss_acc / len(val_dataloader)
 
-                #Sep. conditions
-                condition_images = batch[1].to('cuda:0')
-            
-                yhat = model(condition_images,torch.zeros(condition_images.shape[0]).to(condition_images.device), return_dict=False)[0]
-                
-                #send data into loss func and get the loss (the model call is in here)
-                loss = loss_fn(clean_images,yhat).mean()
-                
-                val_loss += loss.detach()
-                
-                #log things on tensorboard 
-                progress_bar2.update(1)
-                logs = {"loss": loss.detach().item()}
-                progress_bar2.set_postfix(**logs)
-
-        # Sum up the losses across all GPUs
-        mean_val_loss = val_loss.mean()
+        # --- Independent val (validation zarr 1024 samples, diagnostic only) ---
+        mean_independent_val_loss = float('nan')
+        if val_heldout_dataloader is not None:
+            independent_val_loss_acc = torch.tensor(0.0, device=accelerator.device)
+            with torch.no_grad():
+                for batch in tqdm(val_heldout_dataloader, total=len(val_heldout_dataloader), desc=f"Independent Val", disable=not accelerator.is_local_main_process):
+                    clean_images = batch[0][:, 0:1].to(accelerator.device)
+                    condition_images = batch[1].to(accelerator.device)
+                    yhat = model(condition_images, torch.zeros(condition_images.shape[0], device=accelerator.device), return_dict=False)[0]
+                    loss = loss_fn(clean_images.to(torch.float), yhat.to(torch.float)).mean()
+                    independent_val_loss_acc += loss.detach()
+            mean_independent_val_loss = (independent_val_loss_acc / len(val_heldout_dataloader)).item()
         
-        # Print or log the average epoch loss, need to convert to scalar to get tensorboard to work (using .item())
-        logs = {"epoch_loss": mean_epoch_loss.item(), "epoch": epoch,"val_loss":mean_val_loss.item()}
-        
+        # Log to TB
+        logs = {
+            "epoch_loss": mean_epoch_loss.item(),
+            "epoch": epoch,
+            "internal_val_loss": mean_internal_val_loss.item(),
+            "independent_val_loss": mean_independent_val_loss,
+        }
         accelerator.log(logs, step=epoch)
 
-        #accumulate rolling mean 
-        loss_history.append(mean_val_loss.item())
-        
-        # Calculate the moving average if enough epochs have passed
+        if accelerator.is_main_process:
+            print(f"[Epoch {epoch:3d}] train={mean_epoch_loss.item():.6f}  "
+                  f"internal_val={mean_internal_val_loss.item():.6f}  "
+                  f"independent_val={mean_independent_val_loss:.6f}  "
+                  f"global_step={global_step}")
+
+        # Early stopping: based on internal val moving average (论文 protocol, 严格不变)
+        loss_history.append(mean_internal_val_loss.item())
         if len(loss_history) >= window_size:
             moving_average = sum(loss_history[-window_size:]) / window_size
-            logs = {"moving_epoch_loss": moving_average, "epoch": epoch}
+            logs = {"moving_internal_val_loss": moving_average, "epoch": epoch}
             accelerator.log(logs, step=epoch)
+            if accelerator.is_main_process:
+                print(f"  moving_internal_val (win={window_size})={moving_average:.6f}  "
+                      f"best_moving={best_moving_val_loss:.6f}  "
+                      f"no_improve={no_improvement_count}/{patience}")
 
-            # Check for improvement in the moving_average
-            if moving_average < (best_loss - min_delta):
-                best_loss = moving_average
+            if moving_average < (best_moving_val_loss - min_delta):
+                best_moving_val_loss = moving_average
                 no_improvement_count = 0
             else:
                 no_improvement_count += 1
-        
-        # This is the eval and saving step 
+
+        # --- Save everything ---
         if accelerator.is_main_process:
-            
-            #this is to save the model 
-            if (epoch + 1) % config.save_model_epochs == 0 or epoch == config.num_epochs - 1:
-                if config.push_to_hub:
-                    repo.push_to_hub(commit_message=f"Epoch {epoch}", blocking=True)
-                else:
-                    #need to grab the unwrapped diffusers model from EDMPrecond 
-                    accelerator.unwrap_model(model).save_pretrained(config.output_dir)
-                    
-                    with torch.no_grad():
-                        #run a batch of images through
-                        images_batch = model(condition_images,torch.zeros(condition_images.shape[0]).to(condition_images.device), return_dict=False)[0]
-                    
-                    #colorize the image 
-                    image = images_batch[0].squeeze(0).unsqueeze(-1).cpu().numpy()
-                    color_image = torch.tensor(colorize(image,vmin=-4,vmax=2,cmap='Spectral_r')).permute(2, 0, 1)
-                    
-                    #add static example here, generate one image, add to board
-                    writer.add_image("Output Image", color_image, epoch)
+            accelerator.save_state(config.output_dir)
+            accelerator.unwrap_model(model).save_pretrained(config.output_dir)
 
-                    #write the latest to the board so we can slide between the truth and this image 
-                    writer.add_image("Slider", color_image, 1)
-                    
-                    #add the original image again so the slider updates?
-                    image = clean_images_eval[0,0:1].squeeze(0).unsqueeze(-1).cpu()
-                    color_image = torch.tensor(colorize(image,vmin=-4,vmax=2,cmap='Spectral_r')).permute(2, 0, 1)
-                    writer.add_image("Slider", color_image, 0)
+            if mean_internal_val_loss.item() < best_internal_val_loss - 1e-12:
+                best_internal_val_loss = mean_internal_val_loss.item()
+                best_internal_epoch = epoch
+                best_dir = os.path.join(config.output_dir, "best_internal_unet")
+                os.makedirs(best_dir, exist_ok=True)
+                accelerator.unwrap_model(model).save_pretrained(best_dir)
+                print(f"  [Best checkpoint] internal_val improved to {best_internal_val_loss:.6f} (epoch {epoch}) -> {best_dir}")
 
-        # Early stopping disabled for overfit test
-        # if no_improvement_count >= patience:
-        #     ...
-        #     break
+            state = {
+                "epoch": epoch,
+                "global_step": global_step,
+                "best_moving_val_loss": best_moving_val_loss,
+                "best_internal_val_loss": best_internal_val_loss,
+                "best_internal_epoch": best_internal_epoch,
+                "no_improvement_count": no_improvement_count,
+                "loss_history": loss_history,
+            }
+            with open(state_file, "w") as f:
+                json.dump(state, f, indent=2)
+
+            # TensorBoard image visualization
+            with torch.no_grad():
+                images_batch = model(condition_images, torch.zeros(condition_images.shape[0], device=accelerator.device), return_dict=False)[0]
+            image = images_batch[0].squeeze(0).unsqueeze(-1).cpu().numpy()
+            color_image = torch.tensor(colorize(image, vmin=-4, vmax=2, cmap='Spectral_r')).permute(2, 0, 1)
+            writer.add_image("Output Image", color_image, epoch)
+            writer.add_image("Slider", color_image, 1)
+            image = clean_images_eval[0, 0:1].squeeze(0).unsqueeze(-1).cpu()
+            color_image = torch.tensor(colorize(image, vmin=-4, vmax=2, cmap='Spectral_r')).permute(2, 0, 1)
+            writer.add_image("Slider", color_image, 0)
+
+        accelerator.wait_for_everyone()
+
+        if no_improvement_count >= patience:
+            if accelerator.is_main_process:
+                print(f"\n[Early stopping] triggered after {patience} epochs without improvement. "
+                      f"best_internal_val={best_internal_val_loss:.6f} at epoch {best_internal_epoch}")
+            accelerator.wait_for_everyone()
+            break
                     
         gc.collect()
         
@@ -342,15 +398,6 @@ def colorize(value, vmin=None, vmax=None, cmap=None):
 #initalize config 
 config = TrainingConfig()
 
-ds_train = torch.utils.data.Subset(dataset, [0])
-ds_val = torch.utils.data.Subset(dataset, [0])
-
-#throw it in a dataloader for fast CPU handoffs. 
-#Note, you could add preprocessing steps with image permuations here i think 
-train_dataloader = torch.utils.data.DataLoader(ds_train, batch_size=config.train_batch_size, shuffle=True)
-
-val_dataloader = torch.utils.data.DataLoader(ds_val, batch_size=config.val_batch_size, shuffle=False)
-
 # go ahead and build a UNET, this was the exact same as the butterfly example, but different channels. This is a big model.. 
 model = UNet2DModel(
     sample_size=config.image_size,  # the target image resolution
@@ -386,48 +433,4 @@ lr_scheduler = get_cosine_schedule_with_warmup(
 
 
 #main method here! 
-train_loop(config, model, optimizer, train_dataloader, lr_scheduler,val_dataloader)
-
-# ################### Inference & Visualization ########################
-print("\n" + "="*60)
-print("Inference & Visualization - Single Sample Overfit Test")
-print("="*60)
-
-# Grab the single sample
-cond_tensor = dataset.input_images[0:1].to('cuda').float()
-target_tensor = dataset.output_images[0:1].to('cuda').float()
-
-# Load trained model from disk (freshest checkpoint)
-from diffusers import UNet2DModel as _UNet2DModel
-model_ft = _UNet2DModel.from_pretrained(config.output_dir).to('cuda')
-model_ft.eval()
-
-with torch.no_grad():
-    pred = model_ft(cond_tensor, torch.zeros(1, device='cuda'), return_dict=False)[0]  # [1, 1, 256, 256]
-
-# Compute metrics
-mse = ((pred.float() - target_tensor.float()) ** 2).mean().item()
-mae = (pred.float() - target_tensor.float()).abs().mean().item()
-print(f"Test MSE: {mse:.6f}")
-print(f"Test MAE: {mae:.6f}")
-
-# Visualization
-fig, axes = plt.subplots(1, 5, figsize=(20, 4))
-
-# cond channel 0
-ax = axes[0]; im = ax.imshow(cond_tensor[0, 0].cpu().float(), cmap='Spectral_r', vmin=-4, vmax=2); ax.set_title('Input Ch0'); ax.axis('off'); plt.colorbar(im, ax=ax, fraction=0.046)
-# cond channel 1
-ax = axes[1]; im = ax.imshow(cond_tensor[0, 1].cpu().float(), cmap='Spectral_r', vmin=-4, vmax=2); ax.set_title('Input Ch1'); ax.axis('off'); plt.colorbar(im, ax=ax, fraction=0.046)
-# target (ground truth)
-ax = axes[2]; im = ax.imshow(target_tensor[0, 0].cpu().float(), cmap='Spectral_r', vmin=-4, vmax=2); ax.set_title('Target (GT)'); ax.axis('off'); plt.colorbar(im, ax=ax, fraction=0.046)
-# prediction
-ax = axes[3]; im = ax.imshow(pred[0, 0].cpu().float(), cmap='Spectral_r', vmin=-4, vmax=2); ax.set_title(f'Prediction (MSE={mse:.4f})'); ax.axis('off'); plt.colorbar(im, ax=ax, fraction=0.046)
-# absolute error
-ax = axes[4]; err = (pred[0, 0].cpu().float() - target_tensor[0, 0].cpu().float()).abs(); im = ax.imshow(err, cmap='hot'); ax.set_title(f'Absolute Error (MAE={mae:.4f})'); ax.axis('off'); plt.colorbar(im, ax=ax, fraction=0.046)
-
-plt.suptitle(f'Single Sample Overfit Test — UNet 2-ch input → 1-ch target', fontsize=14)
-plt.tight_layout()
-out_png = os.path.join(config.output_dir, 'overfit_visualization.png')
-plt.savefig(out_png, dpi=150, bbox_inches='tight')
-print(f"\nVisualization saved to: {out_png}")
-plt.show()
+train_loop(config, model, optimizer, train_dataloader, lr_scheduler, val_dataloader, val_heldout_dataloader)
