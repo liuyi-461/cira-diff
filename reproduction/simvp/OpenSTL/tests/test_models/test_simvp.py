@@ -1,31 +1,44 @@
 import pytest
+import torch
 
 from openstl.models import SimVP_Model
 
 
-def test_assertion():
+def test_invalid_model_type():
+    """An unsupported model_type must raise AssertionError inside MetaBlock."""
     with pytest.raises(AssertionError):
-        SimVP_Model(arch='unknown')
-
-    with pytest.raises(AssertionError):
-        # HorNet arch dict should include 'embed_dims',
-        SimVP_Model(arch=dict(base_dim=64))
-
-    with pytest.raises(AssertionError):
-        # HorNet arch dict should include 'embed_dims',
-        SimVP_Model(
-            arch=dict(
-                base_dim=64,
-                depths=[2, 3, 18, 2],
-                orders=[2, 3, 4, 5],
-                dw_cfg=[dict(type='DW', kernel_size=7)] * 4,
-            )
-        )
+        SimVP_Model(in_shape=(4, 1, 16, 16), model_type='unknown')
 
 
-def test_convlstm():
+@pytest.mark.parametrize('model_type', ['gSTA', 'IncepU', 'ConvNeXt', 'Swin'])
+def test_forward_shape(model_type):
+    """SimVP_Model must preserve (B, T, C, H, W) through encode-translate-decode.
 
-    # Test forward
-    model = SimVP_Model(num_layers=3, num_hidden=1)
-    model.init_weights()
-    model.train()
+    H, W are downsampled by 2**(N_S/2); with N_S=4 the spatial size must be
+    divisible by 4, so 16x16 is used here.
+    """
+    in_shape = (4, 1, 16, 16)
+    model = SimVP_Model(
+        in_shape=in_shape, model_type=model_type,
+        hid_S=4, hid_T=8, N_S=4, N_T=2,
+    )
+    model.eval()
+    x = torch.randn(2, *in_shape)
+    with torch.no_grad():
+        y = model(x)
+    assert y.shape == (2, 4, 1, 16, 16)
+
+
+def test_output_frames_equal_input_frames():
+    """The model always predicts T frames equal to the input T; longer rollout
+    (aft > pre) is handled by the SimVP method, not the model."""
+    in_shape = (4, 1, 16, 16)
+    model = SimVP_Model(
+        in_shape=in_shape, model_type='gSTA',
+        hid_S=4, hid_T=8, N_S=4, N_T=2,
+    )
+    model.eval()
+    x = torch.randn(2, 4, 1, 16, 16)
+    with torch.no_grad():
+        y = model(x)
+    assert y.shape == x.shape
