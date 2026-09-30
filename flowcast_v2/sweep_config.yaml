@@ -1,0 +1,27 @@
+﻿common:
+  # null: honor CUDA_VISIBLE_DEVICES / Slurm allocation; otherwise one GPU.
+  num_gpus: null
+  gpu_ids: null
+  train_file: null
+  val_file: null
+  test_file: null
+  max_samples: null
+  val_max_samples: null
+  test_max_samples: null
+  encode_batch_size: 8
+  source_mean: 279.0699
+  source_std: 19.3297
+  # null: fit Kelvin bounds on training samples only, without clipping.
+  normalization: null
+vae:
+  learning_rate: [0.0001]
+  num_epochs: [30]
+  micro_batch_size: [4]
+  kl_weight: [1.0e-4]
+  disc_weight: [0.5]
+  warmup_generator_epochs: [3]
+cfm:
+  learning_rate: [0.0005]
+  num_epochs: [30]
+  micro_batch_size: [4]
+  sigma: [0.01]

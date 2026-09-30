@@ -1,0 +1,112 @@
+autoencoder_params:
+  act_fn: silu
+  autoencoder_checkpoint: null
+  block_out_channels:
+  - 128
+  - 256
+  - 512
+  - 512
+  down_block_types:
+  - DownEncoderBlock2D
+  - DownEncoderBlock2D
+  - DownEncoderBlock2D
+  - DownEncoderBlock2D
+  latent_channels: 4
+  layers_per_block: 2
+  norm_num_groups: 32
+  normalized_autoencoder: true
+  up_block_types:
+  - UpDecoderBlock2D
+  - UpDecoderBlock2D
+  - UpDecoderBlock2D
+  - UpDecoderBlock2D
+data_params:
+  lag_time: 2
+  lead_time: 1
+  time_spacing: 1
+ema_model_saving_params:
+  ema_model_saving: true
+  ema_model_saving_decay: 0.999
+flow_matching_params:
+  flow_matching_method: vanilla
+  sigma: 0.01
+latent_model:
+  attn_drop: 0.1
+  attn_linear_init_mode: '0'
+  attn_proj_linear_init_mode: '2'
+  base_units: 192
+  checkpoint_level: 0
+  conv_init_mode: '0'
+  dec_self_update_global: true
+  depth:
+  - 4
+  - 4
+  down_up_linear_init_mode: '0'
+  downsample: 2
+  downsample_type: patch_merge
+  ffn2_linear_init_mode: '2'
+  ffn_activation: gelu
+  ffn_drop: 0.1
+  ffn_linear_init_mode: '0'
+  gated_ffn: false
+  global_dim_ratio: 1
+  global_proj_linear_init_mode: '2'
+  norm_init_mode: '0'
+  norm_layer: layer_norm
+  num_global_vectors: 0
+  num_heads: 4
+  padding_type: zeros
+  pos_embed_type: t+h+w
+  proj_drop: 0.1
+  scale_alpha: 1.0
+  self_attn_use_final_proj: true
+  self_pattern: axial
+  separate_global_qkv: true
+  time_embed_channels_mult: 4
+  time_embed_dropout: 0.0
+  time_embed_use_scale_shift_norm: false
+  unet_res_connect: true
+  upsample_kernel_size: 3
+  upsample_type: upsample
+  use_dec_cross_global: false
+  use_dec_self_global: false
+  use_global_self_attn: true
+  use_global_vector_ffn: false
+  use_relative_pos: true
+optimizer_params:
+  learning_rate: 0.0005
+  optimizer_type: adamw
+  weight_decay: 0.0001
+partial_evaluation_params:
+  cartopy_features: false
+  partial_evaluation: false
+  partial_evaluation_batches: 40
+  partial_evaluation_interval: 1
+run_params:
+  debug_mode: false
+  enable_wandb: false
+  preload_model: null
+  run_string: cfm_flowcast_ddp
+scheduler_params:
+  lr_cosine_min_lr_ratio: 0.01
+  lr_cosine_min_warmup_lr_ratio: 0.1
+  lr_cosine_warmup_iter_percentage: 0.01
+  lr_plateau_factor: 0.2
+  lr_plateau_patience: 6
+  scheduler_type: cosine
+test_params:
+  batch_size_autoencoder: 12
+  cartopy_features: false
+  euler_steps: 10
+  micro_batch_size: 6
+  num_workers: 2
+  probabilistic_samples: 8
+training_params:
+  early_stopping_metric: val_loss
+  early_stopping_patience: 50
+  fp16: true
+  grad_accumulation_steps: 1
+  gradient_clip_val: 1.0
+  micro_batch_size: 4
+  num_epochs: 30
+  num_workers: 2

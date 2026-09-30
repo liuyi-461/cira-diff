@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.test-deps/
+artifacts/
+sweep_runs/
+runs/
+logs/
+*.zarr/
+*.pt
+*.pth
+sweep_results.csv
