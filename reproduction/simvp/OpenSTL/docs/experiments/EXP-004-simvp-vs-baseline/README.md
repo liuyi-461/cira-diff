@@ -5,6 +5,8 @@
 - 状态：`BASELINE COPIED / EVAL READY`（我们的模型尚未用该协议出数）
 - 日期：2026-10-06
 - 关联：`EXP-002`（小样本流水线）、`EXP-003`（单样本过拟合）、`DEC-003`（不改上游）
+- 后续：**`EXP-005`（SimVP 多 seed rollout 方差，与 UNet 对照）**——
+  本文件所有 rollout 结论均为**单 seed**，其稳健性由 EXP-005 判定
 - 基线来源（**只读引用，未修改对方任何文件**）：
   - `/home/group1/26fall_aiclass/ly/cira-diff/` → Vanilla UNet（EXP-EVAL-001 / EXP-EVAL-003）
   - `/home/group1/26fall_aiclass/cb/.../simvp/full_train/` → SimVP 全量训练（报告 + test_metrics.json）

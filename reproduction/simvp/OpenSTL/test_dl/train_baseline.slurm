@@ -36,6 +36,12 @@ CONFIG="$OPENSTL_DIR/configs/satcast/SimVP.py"
 
 EX_NAME=${EX_NAME:-satcast_simvp_full}
 RES_DIR="${RES_DIR:-$OPENSTL_DIR/work_dirs}"
+# 多 seed 支持：SEED=<n> 时 ex_name 自动加 _seed<n> 后缀，各 seed 产物互不覆盖。
+# 只改变模型初始化 seed + DataLoader shuffle 顺序（数据 split 是固定的三份 zarr，
+# 不存在 split_seed 变化），与 ly 的"仅改变模型初始化 seed"做法等价。
+if [ -n "${SEED:-}" ]; then
+    EX_NAME="${EX_NAME}_seed${SEED}"
+fi
 RUN_DIR="$RES_DIR/$EX_NAME"
 
 # auto = 若存在 checkpoints/last.ckpt 就续跑（被 48h 时限杀掉时直接重提即可）；off = 从头训
@@ -87,6 +93,9 @@ if [ "$SMOKE" = "1" ]; then
     echo "[INFO] *** 冒烟模式：少量样本 2 epoch，产物写到 $RUN_DIR ***"
 elif [ -n "$EPOCHS" ]; then
     TRAIN_ARGS+=(--epochs "$EPOCHS")
+fi
+if [ -n "${SEED:-}" ]; then
+    TRAIN_ARGS+=(--seed "$SEED")
 fi
 
 CKPT_ARGS=()
