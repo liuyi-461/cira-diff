@@ -17,15 +17,20 @@ def decode(vae, latent, norm, frame_batch=8):
     return denormalize_to_kelvin(decoded[:,0], norm).reshape(b,t,*decoded.shape[-2:])
 
 
-def forecast(model, condition, target_shape, samples, steps):
+def forecast(model, condition, target_shape, samples, steps, horizon):
+    # Roll the model out to the full target horizon; horizon==1 for multi-step models.
     condition = model.normalize(condition)
-    # Fixed-step Euler, consistent with training's normalized latent space.
     for _ in range(samples):
-        state = torch.randn(target_shape,device=condition.device)
-        for step in range(steps):
-            time = torch.full((len(state),),step/steps,device=state.device)
-            state = state + model(time,state,condition)/steps
-        yield model.denormalize(state)
+        cond, states = condition, []
+        for _ in range(horizon):
+            state = torch.randn(target_shape, device=cond.device)
+            for step in range(steps):
+                time = torch.full((len(state),), step/steps, device=state.device)
+                state = state + model(time, state, cond)/steps
+            states.append(model.denormalize(state))
+            # Feed the prediction back, keeping the lag window fixed at lag_time frames.
+            cond = torch.cat([cond, state], dim=1)[:, -condition.shape[1]:]
+        yield torch.cat(states, dim=1)
 
 
 def main(argv=None):
@@ -46,6 +51,9 @@ def main(argv=None):
     p.add_argument('--fss_window',type=int,default=9)
     p.add_argument('--index',type=int,default=0)
     p.add_argument('--figure',action='store_true')
+    p.add_argument('--cmap',default='Spectral_r',help='figure colormap; gray or Greys for black-and-white')
+    p.add_argument('--vmin',type=float,default=None,help='figure color lower bound in K (default: kelvin_min)')
+    p.add_argument('--vmax',type=float,default=None,help='figure color upper bound in K (default: kelvin_max)')
     p.add_argument('--split',choices=['val','test'],default='test')
     args=p.parse_args(argv)
     if min(args.batch_size,args.samples,args.steps) <= 0 or args.index < 0:
@@ -109,7 +117,9 @@ def main(argv=None):
             if model:
                 condition=torch.from_numpy(np.asarray(latent['input_images'][start:stop])).permute(0,1,3,4,2).to(device)
                 target_shape=(b,*shape('output_images'))
-                predictions=np.stack([decode(vae,z,norm).cpu().numpy() for z in forecast(model,condition,target_shape,args.samples,args.steps)])
+                horizon=-(-y.shape[1]//shape('output_images')[0])
+                predictions=np.stack([decode(vae,z,norm).cpu().numpy() for z in forecast(model,condition,target_shape,args.samples,args.steps,horizon)])
+                predictions=predictions[:,:,:y.shape[1]]
                 metrics['flowcast'].update(predictions,truth)
             if args.figure and start==args.index:
                 import matplotlib
@@ -120,10 +130,16 @@ def main(argv=None):
                 if predictions is not None:
                     pictures.extend([predictions[:,0,0].mean(0),np.quantile(predictions[:,0,0],.1,axis=0),np.quantile(predictions[:,0,0],.9,axis=0)])
                     titles.extend(['Ensemble mean (K)','10% quantile (K)','90% quantile (K)'])
-                fig,axes=plt.subplots(1,len(pictures),figsize=(5*len(pictures),5))
-                for ax,picture,title in zip(axes,pictures,titles):
-                    ax.imshow(picture,cmap='Spectral_r',vmin=norm['kelvin_min'],vmax=norm['kelvin_max']);ax.set_title(title);ax.axis('off')
-                fig.tight_layout();fig.savefig(out/'comparison.png',dpi=120);plt.close(fig)
+                vmin=norm['kelvin_min'] if args.vmin is None else args.vmin;vmax=norm['kelvin_max'] if args.vmax is None else args.vmax
+                rows=2 if len(pictures)>3 else 1;cols=3
+                fig,axes=plt.subplots(rows,cols,figsize=(4.6*cols,4.2*rows),constrained_layout=True)
+                panels=list(axes.flat);image=None
+                for ax,picture,title in zip(panels,pictures,titles):
+                    image=ax.imshow(picture,cmap=args.cmap,vmin=vmin,vmax=vmax);ax.set_title(title);ax.axis('off')
+                for ax in panels[len(pictures):]:ax.axis('off')
+                fig.colorbar(image,ax=panels,fraction=0.025,pad=0.02)
+                fig.suptitle(f'Comparison of {args.index}')
+                fig.savefig(out/f'comparison_{args.index}.png',dpi=120);plt.close(fig)
             print(f'Evaluated {stop-args.index}/{end-args.index}',flush=True)
     report=dict(arguments=vars(args),normalization=norm,samples_evaluated=end-args.index,
                 metric_definition='Kelvin; CSI/FSS on ensemble-mean Tb <= threshold; reflected spatial windows; PSNR null for zero MSE; CSI/FSS null for no events',

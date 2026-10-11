@@ -3,7 +3,7 @@ import argparse
 from pathlib import Path
 
 
-def encode(zarr_path, ckpt_path, config, out_path, n_samples=None, batch_size=8, device=None):
+def encode(zarr_path, ckpt_path, config, out_path, n_samples=None, batch_size=8, device=None, lead_time=None):
     import numpy as np
     import torch
     import zarr
@@ -26,6 +26,11 @@ def encode(zarr_path, ckpt_path, config, out_path, n_samples=None, batch_size=8,
                 raise ValueError('Expected raw GOES (N,T,H,W) arrays')
             for start in range(0, n, batch_size):
                 raw = np.asarray(source[key][start:min(start + batch_size, n)], dtype=np.float32)
+                if key == 'output_images' and lead_time is not None:
+                    # GOES stores ship every horizon at once; CFM consumes the first lead_time.
+                    if raw.shape[1] < lead_time:
+                        raise ValueError(f'output_images holds {raw.shape[1]} frames, fewer than lead_time={lead_time}')
+                    raw = raw[:, :lead_time]
                 if not np.isfinite(raw).all():
                     raise ValueError(f'Nonfinite data at {key}:{start}')
                 b, t, h, w = raw.shape
@@ -48,6 +53,7 @@ def main():
     p.add_argument('--n_samples', type=int)
     p.add_argument('--batch_size', type=int, default=8)
     p.add_argument('--device')
+    p.add_argument('--lead_time', type=int)
     encode(**vars(p.parse_args()))
 
 

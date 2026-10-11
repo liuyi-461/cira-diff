@@ -373,7 +373,10 @@ model = AutoencoderKL(
 )
 
 if preload_model_state_dict is not None:
-    model.load_state_dict(preload_model_state_dict)
+    # Checkpoints saved under DDP carry a "module." prefix; removeprefix is a no-op otherwise.
+    model.load_state_dict(
+        {k.removeprefix("module."): v for k, v in preload_model_state_dict.items()}
+    )
     if rank == 0:
         print(
             f"{DEBUG_PRINT_PREFIX}Successfully loaded model state dict from checkpoint"

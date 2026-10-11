@@ -96,6 +96,32 @@ def test_stream_encoder_mode_and_partial_failure(raw,tmp_path,monkeypatch):
         encode(path,'ckpt','config',failed,device='cpu')
     assert zarr.open(str(failed),mode='r').attrs['complete'] is False
 
+def test_encode_latent_trims_targets_to_lead_time(tmp_path,monkeypatch):
+    from scripts.encode_latent import encode
+    import datasets.goes.runtime as runtime
+    raw_path=tmp_path/'multi.zarr'
+    data=zarr.open_group(str(raw_path),mode='w')
+    x=np.arange(3*2*8*8,dtype=np.float32).reshape(3,2,8,8)/100-3
+    y=np.arange(3*3*8*8,dtype=np.float32).reshape(3,3,8,8)/100
+    data.create_dataset('input_images',data=x)
+    data.create_dataset('output_images',data=y)
+    norm=fit_normalization(raw_path)
+    class FakeVAE:
+        def encode(self,frames):
+            class Distribution:
+                def mode(self):return frames*2
+            return SimpleNamespace(latent_dist=Distribution())
+    monkeypatch.setattr(runtime,'load_vae',lambda *a:(FakeVAE(),norm))
+    monkeypatch.setattr(runtime,'sha256',lambda *a:'hash')
+    out=tmp_path/'latent.zarr'
+    encode(raw_path,'ckpt','config',out,batch_size=2,device='cpu',lead_time=1)
+    latent=zarr.open(str(out),mode='r')
+    assert latent['input_images'].shape==(3,2,8,8,1)    # 输入不裁剪
+    assert latent['output_images'].shape==(3,1,8,8,1)   # 3 帧目标裁到 lead_time=1
+    np.testing.assert_allclose(latent['output_images'][:,:,0],normalize_to_neg_one_one(y[:,:1],norm)*2)
+    assert latent.attrs['complete'] is True
+    with pytest.raises(ValueError,match='lead_time'):
+        encode(raw_path,'ckpt','config',tmp_path/'bad.zarr',device='cpu',lead_time=5)
 
 def test_metrics_perfect_and_crps():
     target=np.ones((1,1,8,8))*230
@@ -148,8 +174,22 @@ def test_forecast_normalizes_condition_and_denormalizes_output():
     torch.manual_seed(3)
     noise=torch.randn(1,1,2,2,1)
     torch.manual_seed(3)
-    output=list(forecast(Model(),torch.full((1,2,2,2,1),12.),(1,1,2,2,1),1,2))[0]
+    output=list(forecast(Model(),torch.full((1,2,2,2,1),12.),(1,1,2,2,1),1,2,1))[0]
     torch.testing.assert_close(output,noise*2+10)
+
+def test_forecast_rolls_out_and_keeps_lag_window():
+    from scripts.evaluate import forecast
+    seen=[]
+    class Model:
+        def normalize(self,x):return x
+        def denormalize(self,x):return x
+        def __call__(self,t,state,condition):
+            seen.append(condition[0].clone()); return torch.zeros_like(state)
+    out=list(forecast(Model(),torch.ones(1,2,4,4,1),(1,1,4,4,1),1,2,3))[0]
+    assert [c.shape[0] for c in seen]==[2,2,2]      # 窗口恒为 lag_time=2
+    assert torch.equal(seen[1][0],seen[0][1])       # 窗口左移：上轮末帧变本轮首帧
+    assert not torch.equal(seen[1][1],seen[0][1])   # 末尾换成了新预测，而非留旧值
+    assert out.shape==(1,3,4,4,1)                   # horizon 沿时间维拼接
 
 
 def test_sweep_failure_records_and_skips_cfm(raw,tmp_path,monkeypatch):

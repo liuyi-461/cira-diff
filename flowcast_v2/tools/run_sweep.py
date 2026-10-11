@@ -121,7 +121,8 @@ def main():
                     continue
                 cmd = [sys.executable,'-m','scripts.encode_latent','--zarr_path',source,'--ckpt_path',vae_ckpt,
                        '--config',run/'vae.yaml','--out_path',run/(split+'.zarr'),
-                       '--batch_size',str(common.get('encode_batch_size',8))]
+                       '--batch_size',str(common.get('encode_batch_size',8)),
+                       '--lead_time',str(cfm_cfg['data_params']['lead_time'])]
                 limit = common.get('max_samples' if split=='train' else split+'_max_samples')
                 if limit is not None:
                     cmd += ['--n_samples',str(limit)]

@@ -17,7 +17,7 @@ cd "$WORKDIR"
 : "${OUTPUT_DIR:?Set a unique run output directory}"
 IFS=',' read -ra GPU_LIST <<< "${CUDA_VISIBLE_DEVICES:-0}"
 NGPU=${NUM_GPUS:-${#GPU_LIST[@]}}
-python -m torch.distributed.run --standalone --nproc_per_node="$NGPU" \
+$PYTHON -m torch.distributed.run --standalone --nproc_per_node="$NGPU" \
     --module experiments.goes.autoencoder.dist_train_autoencoder_kl \
     --config "$CONFIG" --train_file "$TRAIN_FILE" --val_file "$VAL_FILE" \
     --output_dir "$OUTPUT_DIR"
