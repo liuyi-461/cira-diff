@@ -149,12 +149,28 @@ def entry_exp004(single, rollout):
     else:
         a = single['per_lead_time']['1']
         gain = (1 - a['simvp']['mse']['mean'] / UNET_SINGLE_3SEED[1]) * 100
-        L.append('1. **单步：SimVP 优于 Vanilla UNet**（MSE 好 {:.1f}%），'
-                 '且远优于 persistence。'.format(gain))
-        L.append('2. **rollout：SimVP 长时稳定性明显弱于 UNet**，'
-                 '且在中长时效（约 100 分钟后）会劣于 persistence —— '
-                 '纯单步 teacher-forced 训练的误差累积所致。')
-        L.append('3. 上述 rollout 结论为**单 seed**，稳健性由 **EXP-005** 判定。')
+        L.append('1. **单步**：SimVP MSE {:.6f} vs UNet {:.6f} → SimVP {} **{:.1f}%**；'
+                 '两者都远优于 persistence（{:.4f} K）。'.format(
+                     a['simvp']['mse']['mean'], UNET_SINGLE_3SEED[1],
+                     '更好' if gain > 0 else '更差', abs(gain),
+                     a['persistence_K']['rmse_K']))
+        if rollout:
+            p = rollout['per_lead_time']
+            cross = None
+            for lt in range(1, 19):
+                e = p.get(str(lt))
+                if (e and cross is None
+                        and e['simvp_K']['rmse_K'] > e['persistence_K']['rmse_K']):
+                    cross = lt
+            d18 = p['18']['simvp']['mse']['mean'] - UNET_3SEED[18][0]
+            L.append('2. **rollout**：LT=18 SimVP {:.4f} vs UNet(seed0) {:.4f} → '
+                     'SimVP {} **{:.1f}%**；{}。'.format(
+                         p['18']['simvp']['mse']['mean'], UNET_3SEED[18][0],
+                         '更好' if d18 < 0 else '更差',
+                         abs(d18) / UNET_3SEED[18][0] * 100,
+                         '**全程优于 persistence**' if cross is None
+                         else '约 {} 分钟后劣于 persistence'.format(cross * 10)))
+        L.append('3. rollout 的 **seed 方差**判定见 **EXP-005**（3 seed：0/42/123）。')
     L.append('')
     L.append('下一步：')
     L.append('1. 用 EXP-005 的多 seed 方差确认 rollout 结论是否稳健；')
@@ -208,12 +224,14 @@ def entry_exp005(ms):
             u18 = stats(list(UNET_3SEED[18]))
             diff = lt18['simvp_mse_mean'] - u18['mean']
             comb = lt18['simvp_mse_std'] + u18['std']
+            better = 'SimVP' if diff < 0 else 'UNet'
             L.append('rollout LT=18（{} seeds）：SimVP MSE={:.4f}±{:.4f}（CV={:.1f}%）vs '
                      'UNet {:.4f}±{:.4f}（CV={:.1f}%）'.format(
                          lt18['n_seeds'], lt18['simvp_mse_mean'], lt18['simvp_mse_std'],
                          lt18['simvp_cv_pct'], u18['mean'], u18['std'], u18['cv']))
-            L.append('- SimVP 比 UNet 差 **{:.1f}%**；差值 {:.4f} vs 两侧 std 之和 {:.4f}'.format(
-                diff / u18['mean'] * 100, abs(diff), comb))
+            L.append('- **{} 更低（更好），相对优势 {:.1f}%**；'
+                     '差值 {:.4f} vs 两侧 std 之和 {:.4f}'.format(
+                         better, abs(diff) / u18['mean'] * 100, abs(diff), comb))
         L.append('- 逐 LT 的 SimVP/UNet mean±std 与 CV 见 '
                  '`docs/experiments/EXP-005-simvp-multiseed/`。')
     L.append('')
@@ -225,13 +243,14 @@ def entry_exp005(ms):
         u18 = stats(list(UNET_3SEED[18]))
         diff = abs(lt18['simvp_mse_mean'] - u18['mean'])
         comb = lt18['simvp_mse_std'] + u18['std']
+        better = 'SimVP' if lt18['simvp_mse_mean'] < u18['mean'] else 'UNet'
         if diff > comb:
             L.append('LT=18 的差异（{:.4f}）**大于**两侧标准差之和（{:.4f}）→ '
-                     '"SimVP rollout 差于 UNet"**稳健**。'.format(diff, comb))
+                     '"{} rollout 更优"**稳健**。'.format(diff, comb, better))
         else:
             L.append('LT=18 的差异（{:.4f}）**未超过**两侧标准差之和（{:.4f}）→ '
-                     '该差异可能主要来自 seed 方差，**不能断言** SimVP 更差。'.format(
-                         diff, comb))
+                     'n=3 下**统计不显著**：{} 呈更优趋势，但不能作因果性断言。'.format(
+                         diff, comb, better))
         L.append('SimVP 自身 rollout CV（LT=18）={:.1f}%，可与 UNet 的 13.4% 直接对照。'
                  .format(lt18['simvp_cv_pct']))
     L.append('')

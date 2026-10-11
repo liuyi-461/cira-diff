@@ -175,28 +175,31 @@ def render(single, rollout):
     m18 = lt18['simvp']['mse']['mean']
     out.append('### 关键发现')
     out.append('')
-    u18 = UNET_ROLLOUT[18][0]
-    out.append('1. **单步强、长时弱**：LT=1 SimVP MSE {:.6f} vs UNet(seed0) {:.6f}（{}）；'
-               '但 LT=18 SimVP {:.6f} vs UNet(seed0) {:.6f} → 差 **{:.1f}%**，'
-               '比 UNet 3-seed 均值（{:.3f}）差 **{:.1f}%**。'.format(
-                   per['1']['simvp']['mse']['mean'], UNET_ROLLOUT[1][0],
-                   '略胜' if per['1']['simvp']['mse']['mean'] < UNET_ROLLOUT[1][0] else '略逊',
-                   m18, u18, (m18 / u18 - 1) * 100,
-                   UNET_ROLLOUT_LT18_MEAN,
-                   (m18 / UNET_ROLLOUT_LT18_MEAN - 1) * 100))
+    d1 = per['1']['simvp']['mse']['mean'] - UNET_ROLLOUT[1][0]
+    d18 = m18 - UNET_ROLLOUT[18][0]
+    d18m = m18 - UNET_ROLLOUT_LT18_MEAN
+    out.append('1. **逐时效对比**（小者为优；方向由数值自动判定）：')
+    out.append('   - LT=1：SimVP {:.6f} vs UNet(seed0) {:.6f} → SimVP {} **{:.1f}%**'.format(
+        per['1']['simvp']['mse']['mean'], UNET_ROLLOUT[1][0],
+        '更好' if d1 < 0 else '更差', abs(d1) / UNET_ROLLOUT[1][0] * 100))
+    out.append('   - LT=18：SimVP {:.6f} vs UNet(seed0) {:.6f} → SimVP {} **{:.1f}%**；'
+               '相对 UNet 3-seed 均值（{:.3f}）SimVP {} **{:.1f}%**'.format(
+                   m18, UNET_ROLLOUT[18][0], '更好' if d18 < 0 else '更差',
+                   abs(d18) / UNET_ROLLOUT[18][0] * 100, UNET_ROLLOUT_LT18_MEAN,
+                   '更好' if d18m < 0 else '更差',
+                   abs(d18m) / UNET_ROLLOUT_LT18_MEAN * 100))
     if cross:
-        out.append('2. **约 {} 分钟后"预测不如不动"**：从 **LT={}** 起 SimVP 的 RMSE '
-                   '反超 persistence，LT=18 达 {:.2f} K vs {:.2f} K。'.format(
+        out.append('2. **约 {} 分钟后"预测不如不动"**：从 **LT={}** 起 RMSE 反超 '
+                   'persistence，LT=18 达 {:.2f} K vs {:.2f} K。'.format(
                        cross * 10, cross, lt18['simvp_K']['rmse_K'],
                        lt18['persistence_K']['rmse_K']))
     else:
-        out.append('2. SimVP 在全部 18 步内均优于 persistence。')
-    out.append('3. **可能原因（待验证，勿当结论）**：容量差（SimVP gSTA 4.7M vs '
-               'UNet2DModel 47.6M，约 10 倍）；无任何 rollout-aware 训练；'
-               '仅单 seed，未测 SimVP 自身方差（对照：ly 测得 UNet 在 LT=18 的 CV=13.4%）。')
+        out.append('2. SimVP 在**全部 18 步**内均优于 persistence。')
+    out.append('3. 长时效误差随 lead time 累积是两个模型共有的现象'
+               '（绝对误差都在涨），差异体现在累积速度。')
     out.append('')
-    out.append('> ⚠️ 引用限制：以上为**单 seed** 结果；与 UNet 做因果性对比前建议补 '
-               'SimVP 多 seed（≥3）。')
+    out.append('> ⚠️ 稳健性：本节为**单 seed（seed=42）**。带 seed 方差的 3-seed 判定'
+               '见 **EXP-005**（`docs/experiments/EXP-005-simvp-multiseed/`）。')
     return '\n'.join(out)
 
 

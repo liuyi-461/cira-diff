@@ -177,17 +177,28 @@ def render(results):
         st, us = lt18_gap
         diff = st['mean'] - us['mean']
         comb = st['std'] + us['std']
+        se = math.sqrt(st['std'] ** 2 / max(st['n'], 1)
+                       + us['std'] ** 2 / max(us['n'], 1))
+        tstat = abs(diff) / se if se > 0 else float('inf')
         robust = abs(diff) > comb
-        lines.append('1. **LT=18**：SimVP {:.4f}±{:.4f} vs UNet {:.4f}±{:.4f}，'
-                     'SimVP 差 **{:.1f}%**。'.format(
-                         st['mean'], st['std'], us['mean'], us['std'],
-                         diff / us['mean'] * 100))
-        lines.append('2. 差异 {:.4f} 与两侧标准差之和 {:.4f} 相比 → **{}**。'.format(
-            abs(diff), comb,
-            '差异大于方差，结论**稳健**' if robust else
-            '差异未超过方差之和，结论**不稳健**，不能断言 SimVP 更差'))
-        lines.append('3. SimVP 自身 rollout CV 从 LT=1 到 LT=18 的演化，'
-                     '可与 UNet 的 13.4% 直接对照（见上表 CV% 列）。')
+        # 方向无关：谁更低谁更好（MSE 越小越好）
+        better = 'SimVP' if diff < 0 else 'UNet'
+        rel = abs(diff) / us['mean'] * 100
+        lines.append('1. **LT=18 对比**：SimVP {:.4f}±{:.4f} vs UNet {:.4f}±{:.4f}；'
+                     '**{} 更低（更好），相对优势 {:.1f}%**。'.format(
+                         st['mean'], st['std'], us['mean'], us['std'], better, rel))
+        lines.append('2. **稳健性判定**：均值差 {:.4f}｜两侧标准差之和 {:.4f}｜'
+                     '均值差标准误 {:.4f}（t≈{:.2f}）→ {}'.format(
+                         abs(diff), comb, se, tstat,
+                         '**差异大于方差之和，结论稳健**' if robust else
+                         '**n={} 下差异未超过方差之和，统计上不显著**——'
+                         '只能报"更优趋势"，不能作因果性断言'.format(st['n'])))
+        lines.append('3. 逐时效胜负见上表"谁更好"列；CV% 列反映各时效结论的可信度'
+                     '（时效越长 CV 越大，结论越弱）。')
+        lines.append('')
+        lines.append('> 局限：n={} 且只有聚合指标（无逐样本数组），'
+                     '无法做配对检验（同一样本上 SimVP vs UNet 的成对比较），'
+                     '后者通常比独立两样本检验更有力。'.format(st['n']))
     lines.append('')
     lines.append('> 引用限制：样本为各 seed 各 1 次训练；rollout 用 128 条子集'
                  '（与 ly 协议一致）。seed 数越多均值估计越稳（标准误 ≈ CV/√n）。')

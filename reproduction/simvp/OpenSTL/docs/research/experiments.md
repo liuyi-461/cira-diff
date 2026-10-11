@@ -119,7 +119,7 @@
 # EXP-004 统一 Baseline 协议 + SimVP 全量训练评估（GOES-16 ABI ch13）
 
 日期：
-2026-10-07
+2026-10-09
 
 实验目的：
 把外部基线（ly 的 Vanilla UNet、cb 的 SimVP）固化为可引用 baseline，定义统一评估协议，并在同一把尺子上评估我们的 SimVP。
@@ -141,19 +141,18 @@
 - seed=42（多 seed 见 EXP-005）
 
 结果：
-单步（test 全量 1024 条，best epoch = 30）：
-- SimVP：MSE=0.007336、**RMSE=1.6556 K**、MAE=0.8698 K、SSIM=0.8980
+单步（test 全量 1024 条，best epoch = 92）：
+- SimVP：MSE=0.006648、**RMSE=1.5761 K**、MAE=0.7926 K、SSIM=0.9066
 - persistence：MSE=0.055390、RMSE=4.5492 K
 - 对照：UNet(ly,seed42) RMSE≈1.74 K；SimVP(cb,100ep) RMSE≈1.57 K
-- MSE 相对 persistence 降低 **86.76%**
-18 步 rollout（128 条子集）：LT=1 RMSE=1.54 K → LT=18 RMSE=17.10 K
-- **从 LT=10（100 分钟）起 RMSE 反超 persistence**
-- LT=18 对照 UNet(seed0) MSE 0.419200 vs 本模型 0.782793
+- MSE 相对 persistence 降低 **88.00%**
+18 步 rollout（128 条子集）：LT=1 RMSE=1.47 K → LT=18 RMSE=11.02 K
+- LT=18 对照 UNet(seed0) MSE 0.419200 vs 本模型 0.325102
 
 结论：
-1. **单步：SimVP 优于 Vanilla UNet**（MSE 好 9.3%），且远优于 persistence。
-2. **rollout：SimVP 长时稳定性明显弱于 UNet**，且在中长时效（约 100 分钟后）会劣于 persistence —— 纯单步 teacher-forced 训练的误差累积所致。
-3. 上述 rollout 结论为**单 seed**，稳健性由 **EXP-005** 判定。
+1. **单步**：SimVP MSE 0.006648 vs UNet 0.008092 → SimVP 更好 **17.8%**；两者都远优于 persistence（4.5492 K）。
+2. **rollout**：LT=18 SimVP 0.3251 vs UNet(seed0) 0.4192 → SimVP 更好 **22.4%**；**全程优于 persistence**。
+3. rollout 的 **seed 方差**判定见 **EXP-005**（3 seed：0/42/123）。
 
 下一步：
 1. 用 EXP-005 的多 seed 方差确认 rollout 结论是否稳健；
@@ -172,7 +171,7 @@
 # EXP-005 SimVP 多 seed rollout 方差（与 UNet 对照）
 
 日期：
-2026-10-07
+2026-10-09
 
 实验目的：
 ly 证明 Vanilla UNet 的 rollout 对 seed 极敏感（LT=18 CV=13.4%），单 seed 之间比 rollout 无意义。本实验训练 SimVP 多个 seed，拿到 SimVP 自身的 rollout 方差，判定 EXP-004 中"LT=18 比 UNet 差 ~60%"是否稳健。
@@ -183,10 +182,14 @@ ly 证明 Vanilla UNet 的 rollout 对 seed 极敏感（LT=18 CV=13.4%），单 
 - 每 seed 评估单步（1024 条）+ 18 步 rollout（128 条子集）
 
 结果：
-**多 seed 结果尚未产出**（等 seed 0/123 训练完成后由 `aggregate_multiseed.py` 汇总）。
+单步（3 seeds）：SimVP MSE=0.006632±0.000018 vs UNet 0.008100±0.000054
+rollout LT=18（3 seeds）：SimVP MSE=0.3860±0.0581（CV=15.1%）vs UNet 0.4884±0.0789（CV=16.2%）
+- **SimVP 更低（更好），相对优势 21.0%**；差值 0.1024 vs 两侧 std 之和 0.1370
+- 逐 LT 的 SimVP/UNet mean±std 与 CV 见 `docs/experiments/EXP-005-simvp-multiseed/`。
 
 结论：
-待产出。
+LT=18 的差异（0.1024）**未超过**两侧标准差之和（0.1370）→ n=3 下**统计不显著**：SimVP 呈更优趋势，但不能作因果性断言。
+SimVP 自身 rollout CV（LT=18）=15.1%，可与 UNet 的 13.4% 直接对照。
 
 下一步：
 1. 若结论稳健 → 针对长时效做 rollout-aware 训练；
