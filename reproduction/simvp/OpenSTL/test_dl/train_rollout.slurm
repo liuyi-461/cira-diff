@@ -44,6 +44,8 @@ LR=${LR:-5e-4}
 SEED=${SEED:-42}
 N_TRAIN=${N_TRAIN:-800}
 N_VAL=${N_VAL:-224}
+# 验证集来源：validation=从训练集切分；train=改用 train zarr 留出子集（可把训练集用满全量）
+VAL_SOURCE=${VAL_SOURCE:-validation}
 # ex_name 带上 p，便于区分两个子臂
 EX_NAME=${EX_NAME:-satcast_simvp_rollout_ss${SCHED}}
 INIT_CKPT=${INIT_CKPT:-/home/group1/26fall_aiclass/yr/cira-diff/reproduction/simvp/OpenSTL/work_dirs/satcast_simvp_full/checkpoints/best.ckpt}
@@ -70,7 +72,7 @@ python -u -c "import torch; print('[OK] torch', torch.__version__, 'cuda', torch
 ARGS=(--config "$CONFIG" --data-root "$DATA_ROOT" --res-dir "$OPENSTL_DIR/work_dirs"
       --ex-name "$EX_NAME" --rollout-steps "$ROLLOUT" --sched-samp "$SCHED"
       --epochs "$EPOCHS" --batch-size "$BATCH" --lr "$LR" --seed "$SEED"
-      --n-train "$N_TRAIN" --n-val "$N_VAL")
+      --n-train "$N_TRAIN" --n-val "$N_VAL" --val-source "$VAL_SOURCE")
 if [ -n "$INIT_CKPT" ] && [ -f "$INIT_CKPT" ]; then
     ARGS+=(--init-ckpt "$INIT_CKPT")
     echo "[INFO] 热启动自: $INIT_CKPT"

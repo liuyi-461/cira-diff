@@ -39,7 +39,7 @@ mkdir -p "$MPLCONFIGDIR"
 echo "[INFO] job id : ${SLURM_JOB_ID:-N/A}"
 
 # ---------- 1) 评估两个对照臂 ----------
-for D in satcast_simvp_rollout_ss0.0 satcast_simvp_rollout_ss0.5; do
+for D in satcast_simvp_rollout_ss0.0 satcast_simvp_rollout_ss0.5 satcast_simvp_rollout_ss05_full; do
     CKPT="$OPENSTL_DIR/work_dirs/$D/checkpoints/best.ckpt"
     if [ ! -f "$CKPT" ]; then
         echo "[WARN] 跳过 $D（无 best.ckpt，训练可能未完成）"
@@ -58,6 +58,7 @@ echo "================= 导出 npy（1024,18,256,256） ================="
 python -u "$OPENSTL_DIR/tools/export_preds_official_format.py" \
     --extra rollout_ss0.0=satcast_simvp_rollout_ss0.0 \
             rollout_ss0.5=satcast_simvp_rollout_ss0.5 \
+            rollout_ss05_full=satcast_simvp_rollout_ss05_full \
             gan=satcast_simvp_gan
 
 # ---------- 3) 四臂统一对比并回填 EXP-006 ----------

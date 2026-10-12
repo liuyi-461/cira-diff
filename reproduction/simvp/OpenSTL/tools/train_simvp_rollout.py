@@ -114,6 +114,10 @@ def main():
                     help='多步训练数据（该集 output 有 18 帧真值）')
     ap.add_argument('--n-train', type=int, default=800, help='训练用样本数（取前 N 条）')
     ap.add_argument('--n-val', type=int, default=224, help='验证用样本数（取后 M 条）')
+    ap.add_argument('--val-source', choices=['validation', 'train'],
+                    default='validation',
+                    help='验证集来源：validation=从多步训练集中切分（默认）；'
+                         'train=改用 train zarr 留出子集，从而训练集可用满全量')
     ap.add_argument('--rollout-steps', type=int, default=6)
     ap.add_argument('--sched-samp', type=float, default=0.0,
                     help='scheduled sampling 概率 p（0=纯 teacher forcing）')
@@ -145,16 +149,34 @@ def main():
         print(f'[INIT] 已从 {args.init_ckpt} 热启动')
     G.to(device)
 
-    # 数据源：validation 集（output 有 18 帧真值），按索引切分
+    # 数据源：多步监督要求 output 有 ≥K 帧真值，只有 validation 集满足（18 帧）。
+    # 两种配置：
+    #   --val-source validation（默认）：validation 集自身切分训练/验证
+    #   --val-source train：训练集用满**全部** validation 样本，
+    #     验证集改用 train zarr 的末尾留出子集（仅 1 帧真值 → 按单步 MSE 验证）。
+    #     这样能解除"训练集最多 1024 条"的上限，用于检验收益是否只是小样本假象。
     zarr_path = osp.join(args.data_root, args.train_zarr)
     full = SatcastZarrDataset(zarr_path, pre_seq_length=2, aft_seq_length=K)
     n_total = len(full)
-    n_tr = min(args.n_train, n_total - args.n_val)
-    n_va = min(args.n_val, n_total - n_tr)
-    train_set = _SubsetWithAttrs(full, range(0, n_tr))
-    val_set = _SubsetWithAttrs(full, range(n_total - n_va, n_total))
-    print(f'[DATA] {osp.basename(zarr_path)}  总 {n_total} 条 -> '
-          f'train {len(train_set)} / val {len(val_set)}（test 集保持 held-out）')
+    if args.val_source == 'train':
+        n_tr = min(args.n_train, n_total)
+        train_set = _SubsetWithAttrs(full, range(0, n_tr))
+        train_zarr = SatcastZarrDataset(
+            osp.join(args.data_root, 'edm_GOES_ch13_train_dataset.zarr'),
+            pre_seq_length=2, aft_seq_length=1)
+        n_va = min(args.n_val, len(train_zarr))
+        val_set = _SubsetWithAttrs(
+            train_zarr, range(len(train_zarr) - n_va, len(train_zarr)))
+        print(f'[DATA] 训练 = validation 集前 {n_tr} 条（output {K} 帧真值，全量）；'
+              f'验证 = train 集末尾 {n_va} 条（单步 MSE，1 帧真值）；'
+              f'test 集保持 held-out')
+    else:
+        n_tr = min(args.n_train, n_total - args.n_val)
+        n_va = min(args.n_val, n_total - n_tr)
+        train_set = _SubsetWithAttrs(full, range(0, n_tr))
+        val_set = _SubsetWithAttrs(full, range(n_total - n_va, n_total))
+        print(f'[DATA] {osp.basename(zarr_path)}  总 {n_total} 条 -> '
+              f'train {len(train_set)} / val {len(val_set)}（test 集保持 held-out）')
 
     persistent = args.num_workers > 0
     train_loader = create_loader(
@@ -227,8 +249,11 @@ def main():
         with torch.no_grad():
             for xb, yb in val_loader:
                 xb, yb = xb.to(device), yb.to(device)
-                p = rollout_with_ss(G, xb, yb, K, 0.0)      # 验证时不用 SS
-                vsum += float(sum(F.mse_loss(p[k], yb[:, k]) for k in range(K)) / K)
+                # kv 动态：validation 集为 K 帧；train 集仅 1 帧
+                kv = yb.shape[1]
+                p = rollout_with_ss(G, xb, yb, kv, 0.0)      # 验证时不用 SS
+                vsum += float(sum(F.mse_loss(p[k], yb[:, k])
+                                  for k in range(kv)) / kv)
                 vnb += 1
         val = vsum / max(vnb, 1)
         rec = {'epoch': epoch, 'train_loss': tot / max(nb, 1),

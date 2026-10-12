@@ -61,7 +61,13 @@ ARMS = [
     ('multi-step (p=0)', 'satcast_simvp_rollout_ss0.0', '#2ca02c',
      '多步 MSE，滚 6 步，teacher forcing'),
     ('multi-step + SS (p=0.5)', 'satcast_simvp_rollout_ss0.5', '#9467bd',
-     '多步 MSE + scheduled sampling 概率 0.5'),
+     '多步 MSE + scheduled sampling 概率 0.5（validation 800 条）'),
+    ('SS p=0.5 (全量1024)', 'satcast_simvp_rollout_ss05_full', '#8c564b',
+     '多步 MSE + scheduled sampling 0.5，训练用满 validation 1024 条'),
+    ('SS 全量 seed1', 'satcast_simvp_rollout_ss05_full_seed1', '#e377c2',
+     '同上，seed=1（用于 3-seed mean±std）'),
+    ('SS 全量 seed7', 'satcast_simvp_rollout_ss05_full_seed7', '#bcbd22',
+     '同上，seed=7（用于 3-seed mean±std）'),
 ]
 OUT_DIR = osp.join(_OPENSTL_DIR, 'docs', 'experiments', 'EXP-006-anti-blur')
 SUB = 'baseline_eval_rollout18_full'
