@@ -200,3 +200,81 @@ SimVP 自身 rollout CV（LT=18）=15.1%，可与 UNet 的 13.4% 直接对照。
 训练：`SEED=0 sbatch test_dl/train_baseline.slurm`（同理 123）；
 汇总：`tools/aggregate_multiseed.py` → `docs/experiments/EXP-005-simvp-multiseed/`。
 <!-- INDEX:END -->
+
+<!-- EXP006:BEGIN -->
+# EXP-006 抗模糊方案对照（GAN vs 多步训练 / scheduled sampling）
+
+日期：
+2026-10-12
+
+实验目的：
+长时效预测"越推越模糊"（baseline 在 LT=18 的锐度比仅 0.273）。
+本实验对照两类改进方向：① GAN（判别器逼迫输出更真实，生成式，会引入纹理）；
+② 多步训练 ± scheduled sampling（纯监督，减少曝光偏差，不引入纹理）。
+
+数据：
+- 评估：test 全量 1024 条，滚动 18 步（LT=1..18），逐样本 RMSE(K) 与锐度比
+- 训练（GAN 臂）：train 集 35595 条（仅 1 帧真值）
+- 训练（多步臂）：validation 集 800 条（有 18 帧真值，可支撑多步监督）
+
+方法：
+- **baseline**：单步 MSE（teacher forcing），100 epoch
+- **GAN (K=6)**：多步滚动 + 判别器对抗损失（相对权重 5%）+ 双向锐度正则
+- **multi-step (p=0)**：多步 MSE，滚 6 步，teacher forcing
+- **multi-step + SS (p=0.5)**：多步 MSE + scheduled sampling 概率 0.5
+
+参数：
+- 各臂**热启动**于同一个 baseline `best.ckpt`，梯度步数预算均为 **8000 步**
+- GAN：rollout K=6、gan_weight=0.05（相对 MSE）、grad_weight=0.05、判别器带谱归一化
+- 多步：rollout K=6、lr=5e-4、20 轮 × 400 步
+
+结果：
+
+| 臂 | LT=1 RMSE(K) | LT=18 RMSE(K) | LT=18 锐度比 | 相对 baseline(LT18) |
+|---|---|---|---|---|
+| baseline | **1.576** | **11.659** | 0.273 | —（基准） |
+| GAN (K=6) | **1.807** | **15.719** | 2.969 | 恶化 34.8% ❌ |
+| multi-step (p=0) | **1.577** | **13.135** | 0.270 | 恶化 12.7% ❌ |
+| multi-step + SS (p=0.5) | **1.597** | **9.901** | 0.122 | **改善 15.1%** ✅ |
+
+> 锐度比 = 预测梯度幅值 / 真实梯度幅值：<1 偏模糊，≈1 与真实相当，>1 有高频噪声。
+
+结论：
+
+- **GAN (K=6)**：RMSE 恶化 34.8% ❌；锐度比 2.969（过冲为噪声）
+- **multi-step (p=0)**：RMSE 恶化 12.7% ❌；锐度比 0.270
+- **multi-step + SS (p=0.5)**：RMSE **改善 15.1%** ✅；锐度比 0.122
+
+- **根本性权衡**：180 分钟后的细节不可预测，MSE 意义下的最优输出就是平滑的后验均值；任何"补细节"的做法（GAN）必然推高 MSE（感知-失真权衡）。
+
+下一步：
+1. 若多步方向有效 → 用更大数据量（validation 全 1024 条）重训，与 baseline 公平对比；
+2. 若目标是"清晰且真实的预报"本身，应改用**生成式/概率预报**路线（EDM / 扩散，正是本复现项目的论文 CIRA-Diff 的核心主张），并配套集合与感知类评价指标，而非仅看 RMSE；
+3. 结论回填 `docs/research/conclusions.md`。
+
+复现教程:
+GAN：`SCHED` 无关，`sbatch test_dl/train_gan.slurm`（ROLLOUT=6）；
+多步：`SCHED=0.0 / 0.5 sbatch test_dl/train_rollout.slurm`；
+对比：`tools/compare_arms.py` → `docs/experiments/EXP-006-anti-blur/`。
+
+> ⚠️ 对照局限：GAN 臂与多步臂**训练数据来源不同**（train 35595 条 vs validation 800 条），本实验比较的是"同热启动起点、同 8000 步预算下哪种改进方向更有效"，非严格同数据对照。
+<!-- EXP006:END -->
+
+---
+
+# EXP-007 感知-失真权衡：确定性 vs 生成式（SimVP / UNet / EDM）
+
+**🧭 主线报告（选定方向：真实性）**：`docs/research/forecast-realism-report.md`
+—— 把 EXP-004~007 串成一条主线，可直接作为汇报材料。
+
+| 项 | 内容 |
+|---|---|
+| 实验 ID | `EXP-007` |
+| 状态 | ✅ 完成（LT=1 严格有效；LT≥2 的 EDM 仅作锐度下限） |
+| 数据 | test 集**同一批 342 条样本**配对比较；EDM 取自 `ly` 原始预测（**只读**） |
+| 结果（单步 t+10min） | SimVP MSE **0.00633** / 锐度 0.822｜UNet 0.00762 / 0.802｜EDM 0.00942 / **0.902** |
+| 结论 | **MSE 最优的模型不是最清晰的**——EDM 更清晰但 MSE 差 18%~49%，权衡在全时效一致成立 |
+| 数据有效性 | EDM 的 `run_official_edm_multigpu.py` 用 Bug 1 模式 → **LT≥2 作废**；LT=1 teacher-forced 有效 |
+| 副线 | SimVP 配对检验显著优于 UNet（t 达 −11 ~ −34.7），是强确定性基线 |
+| 产出 | `docs/experiments/EXP-007-perception-distortion/`（图 + 数值 + 结论） |
+| 复现 | `python tools/compare_edm_sharpness.py` |
