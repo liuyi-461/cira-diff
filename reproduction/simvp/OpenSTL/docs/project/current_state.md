@@ -1,26 +1,42 @@
 # 当前版本与状态
 
 ## 已完成
-- OpenSTL 代码已 clone 至 `reproduction/simvp/OpenSTL/`。
-- 完成对 SimVP 实现的核心代码理解：`simvp_model.py`、`simvp_modules.py`、`methods/simvp.py`、
-  `api/exp.py`、`tools/train.py`。
-- 建立本文档体系（见 `docs/`）。
+- **SimVP 2→1 全量训练复现成功**：100 epoch，test 1024 条单步 RMSE **1.5761 K**，
+  与 cb 独立复现的 1.5745 K 仅差 0.1% → 交叉验证。
+- **baseline 协议闭环**：三份独立 zarr、物理常数归一化（不做子集 z-score）、
+  逐像素口径、亮温 K；persistence 全量独立复算与 cb 偏差 **0.0000%**。
+- **多 seed + 配对检验**：3 seed（0/42/123），LT=1..18 **全部显著优于 UNet**
+  （配对 t 达 −11 ~ −34.7），推翻早期基于聚合 std 的"不显著"假阴性。
+- **抗模糊方案对照**（EXP-006，七臂）：GAN 失败（LT=18 恶化 34.8%、锐度比冲到 2.97 成噪声）；
+  多步 + scheduled sampling **有效**（3 seed：LT=18 改善 **15.1% ± 1.0 pp**，12.3σ），
+  但**锐度同时降到 baseline 的 49%**。
+- **感知-失真权衡实测**（EXP-007）：SimVP / UNet / EDM 同批 342 条样本配对——
+  **MSE 最优的模型不是最清晰的**（EDM 锐度 0.902 vs SimVP 0.822，但 MSE 差 49%）。
+- **主线报告**：`docs/research/forecast-realism-report.md`。
 
 ## 当前实现
-- `SimVP_Model`：Encoder(`ConvSC`) + `MidMetaNet`(gSTA 默认) + Decoder(`ConvSC` + skip)。
-- `SimVP` method：MSELoss 监督，支持直接多帧预测与递归自回归。
-- 配置：`configs/<dataname>/simvp/SimVP_gSTA.py` 等 13 种骨干变体。
+- 模型：SimVP + gSTA，**4.705M** 参数，**2 帧 → 1 帧**（帧间隔 10 min）；
+  长时效靠自回归外推，已评估到 **18 步 = 3 小时**。
+- **自研代码入口：`tools/README.md`**（训练/评估/对比/报告脚本，含完整 CLI、实测结论、9 条踩坑记录）。
+- 数据适配器：`openstl/datasets/dataloader_satcast.py`（上游唯一新增文件）。
+- 超参唯一来源：`configs/satcast/SimVP.py`。
+- 提交脚本：`test_dl/*.slurm`（环境自检 + GPU 独占 + 依赖链自动串联）。
+- 预测数组已导出为官方格式 `(1024,18,256,256)`：`work_dirs/satcast_preds/`（11 个文件）。
 
 ## 当前问题
-- reproduction 状态仍为 `candidate only`：论文 / 官方仓库关系未审计，数据 / 权重 / 环境未就绪。
-- `tests/test_models/test_simvp.py` 已过期，调用签名与当前 `SimVP_Model` 不一致，会失败。
-- `README.md`（reproduction 级）中 Paper / Dataset / Weights / Environment 等均为 `TODO`。
+- **"清晰"与"低 MSE"在本框架内不可兼得**（已有四条独立证据）；若目标是预报真实性，
+  应转向生成式路线（EDM/扩散 + 集合 + 感知类指标），而非继续在确定性框架内调优。
+- EDM 的 LT≥2 数据受 `ly` 的 rollout Bug 1 污染，长时效锐度对比尚缺；
+  且 EDM 为 113.7M / 825 ep，与 SimVP（4.7M / 100 ep）**规模不对等**，引用须注明。
+- scheduled sampling 的 15.1% 收益基于 1024 条多步数据（baseline 用 35595 条），
+  数据规模差 35 倍，归因时需注意。
+- `tools/train.py`、`tools/test.py` 为上游残留，与本项目流程无关。
 
 ## 下一步计划
-- 审计 SimVP 与 OpenSTL 的上游 provenance 关系（见 `docs/reproduction/`）。
-- 选定目标数据集并编写数据 adapter（见 `docs/data/`）。
-- 修复 / 补充测试（见 `docs/dev/`）。
-- 跑通 environment → inference → training → evaluation，逐状态迁移并留档。
+1. 把 SS 臂与 baseline 的 **锐度–MSE 散点图**补进 `docs/figs/`（目前只有数字表）。
+2. 补 EDM 长时效锐度（需 `ly` 用修复后 rollout 重跑，只读协作）。
+3. 若推进生成式路线：在 SimVP 基线上引入 EDM/扩散，配套集合与 CRPS / spread-skill 指标。
+4. 若可获得更多多步真值，用更大数据量复核 SS 的 15.1% 收益。
 
 ---
 
@@ -110,3 +126,30 @@
 - 悬空引用已全部改指向 `EXP-001-cira-diff-data-audit.md` 或脚本内固定约定。
 - 运行期护栏 DBG-007：当 preload=True 且总样本 > 4000 时打印 OOM 警告，提醒全量训练加 `--no-preload`。
 - EXP-002 文档升级为 `EXECUTED`；reproduction gate 标记为 `Training Reproduced (smoke)`。
+
+### 2026-10-14（修改人：AI assistant）—— 全量复现 + 七臂对照 + 感知-失真权衡主线
+修改原因：项目已从"流水线冒烟"推进到"可对外引用的横向结论"，状态文档需同步；
+同时为 `tools/README.md` 建立文档入口。
+
+影响范围：
+
+| 变更 | 路径 |
+| --- | --- |
+| 新增自研代码文档（含 CLI / 实测结论 / 9 条踩坑记录） | `tools/README.md` |
+| 文档索引增加「代码入口」表 + 推荐阅读顺序 | `docs/README.md` |
+| 状态文档四个小节刷新 + 本更新记录 | `docs/project/current_state.md` |
+| 主线结论材料 | `docs/research/forecast-realism-report.md` |
+| 新增实验证据包 | `docs/experiments/EXP-004~007/` |
+| 图表集扩充至 10 张 | `docs/figs/` |
+
+当前状态更新（均已在 test 集 1024 条上按统一协议验证）：
+
+- **复现成功**：SimVP 单步 RMSE **1.5761 K**（cb 独立复现 1.5745 K，差 0.1%）；
+  persistence 全量独立复算与 cb 偏差 **0.0000%** → 口径链路闭环。
+- **显著优于 UNet**：3 seed 配对检验，LT=1..18 全部显著（t 达 −11 ~ −34.7）。
+- **抗模糊尝试的结论是负向但有价值**：GAN 使 LT=18 恶化 34.8% 且锐度比冲到 2.97（噪声）；
+  唯一有效的是 scheduled sampling（3 seed 改善 **15.1% ± 1.0 pp**，12.3σ），
+  但其机制是**让预报更平滑**（锐度 0.273 → 0.133）。
+- **核心结论（主线）**：确定性模型 MSE 更优但必然模糊；生成式 EDM 更清晰（0.902 vs 0.822）
+  但 MSE 差 49%。**感知-失真权衡已被四条独立证据证实**，正反方向都跑通。
+- 上游 `openstl/` 除新增 `datasets/dataloader_satcast.py` 外**零修改**（DEC-003）。

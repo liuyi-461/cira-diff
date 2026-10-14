@@ -24,6 +24,19 @@
 > 注意：上游 OpenSTL 自带文档位于 `docs/en/`，属于第三方 provenance。本规范新增的
 > 结构不应覆盖、移动或删除 `docs/en/` 下的任何内容。
 
+## 代码入口（自研脚本）
+
+| 内容 | 位置 |
+| --- | --- |
+| **训练 / 评估 / 对比 / 报告脚本**（含完整 CLI、实测结论、9 条踩坑记录） | `tools/README.md` |
+| Slurm 提交脚本（环境自检 + GPU 独占 + 依赖链） | `test_dl/*.slurm` |
+| satcast 数据适配器（上游唯一新增文件） | `openstl/datasets/dataloader_satcast.py` |
+| 训练超参（唯一来源，改动必须登记） | `configs/satcast/SimVP.py` |
+| 主线结论材料（精度 vs 真实性） | `docs/research/forecast-realism-report.md` |
+| 图表集 | `docs/figs/README.md` |
+
+> 上游 `openstl/` 其余部分**未做任何修改**（见 `docs/project/decisions.md` DEC-003）。
+
 ## 文档书写原则（摘要）
 
 - 面向未来阅读，记录结论而非过程。
@@ -36,4 +49,5 @@
 2. `docs/project/current_state.md`
 3. `docs/project/decisions.md`
 4. `docs/project/architecture.md`
-5. `docs/research/`
+5. `tools/README.md`（自研代码入口：CLI、用法、踩坑记录）
+6. `docs/research/`

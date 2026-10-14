@@ -73,7 +73,9 @@ MODEL_KEYS = ('in_shape', 'hid_S', 'hid_T', 'N_S', 'N_T', 'model_type', 'mlp_rat
               'drop', 'drop_path', 'spatio_kernel_enc', 'spatio_kernel_dec',
               'act_inplace')
 
-DEFAULT_DATA_ROOT = '/home/group1/26fall_aiclass/yr/data1/data1/satcast'
+# 可移植性：数据根优先取环境变量 SATCAST_ROOT。
+DEFAULT_DATA_ROOT = os.environ.get(
+    'SATCAST_ROOT', '/home/group1/26fall_aiclass/yr/data1/data1/satcast')
 
 
 # --------------------------------------------------------------- metrics ---

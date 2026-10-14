@@ -41,7 +41,12 @@ if _OPENSTL_DIR not in sys.path:
 import numpy as np  # noqa: E402
 from openstl.datasets.dataloader_satcast import STD_K, MEAN_K  # noqa: E402
 
-LY_DIR = '/home/group1/26fall_aiclass/ly/cira-diff/outputs/eval_unet_raw_preds'
+# 可移植性：ly 的产物根目录优先取环境变量 LY_OUTPUTS
+# （换机器或没有 ly 的产物时，改这个变量即可，不必改代码）
+LY_DIR = osp.join(
+    os.environ.get('LY_OUTPUTS',
+                   '/home/group1/26fall_aiclass/ly/cira-diff/outputs'),
+    'eval_unet_raw_preds')
 UNET_MODELS = ['seed0', 'seed42', 'seed123', 'official']
 SIMVP_DIRS = ['satcast_simvp_full', 'satcast_simvp_full_seed0',
               'satcast_simvp_full_seed123']
@@ -265,8 +270,11 @@ def main():
     # 输入帧：从 test zarr 取（用于展示 conditioning）
     try:
         import zarr
-        g = zarr.open('/home/group1/26fall_aiclass/yr/data1/data1/satcast/'
-                      'edm_GOES_ch13_test_dataset.zarr', mode='r')
+        # 可移植性：数据根优先取环境变量 SATCAST_ROOT
+        g = zarr.open(osp.join(
+            os.environ.get('SATCAST_ROOT',
+                           '/home/group1/26fall_aiclass/yr/data1/data1/satcast'),
+            'edm_GOES_ch13_test_dataset.zarr'), mode='r')
         inp = np.asarray(g['input_images'][:N], dtype=np.float32)
     except Exception:
         inp = None

@@ -42,6 +42,7 @@ Outputs: ``<res_dir>/<ex_name>/`` 下有 checkpoints/（含 best.ckpt）、model
 Dependencies: torch, lightning, timm, fvcore, zarr, numpy
 """
 
+import os
 import os.path as osp
 import sys
 import warnings
@@ -72,7 +73,10 @@ CHANNELS = 1
 HERE = _HERE
 OPENSTL_DIR = _OPENSTL_DIR
 DEFAULT_CONFIG = osp.join(HERE, '..', 'configs', 'satcast', 'SimVP.py')
-DEFAULT_DATA_ROOT = '/home/group1/26fall_aiclass/yr/data1/data1/satcast'
+# 可移植性：数据根优先取环境变量 SATCAST_ROOT，避免硬编码在某个人的 home 下。
+# 用法：SATCAST_ROOT=/data1/satcast python tools/train_simvp_satcast.py ...
+DEFAULT_DATA_ROOT = os.environ.get(
+    'SATCAST_ROOT', '/home/group1/26fall_aiclass/yr/data1/data1/satcast')
 
 
 class SatcastExperiment(BaseExperiment):

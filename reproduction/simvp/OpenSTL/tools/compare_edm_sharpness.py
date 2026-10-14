@@ -65,8 +65,13 @@ import matplotlib  # noqa: E402
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt  # noqa: E402
 
-LY = '/home/group1/26fall_aiclass/ly/cira-diff/outputs'
-TEST_ZARR = '/home/group1/26fall_aiclass/yr/data1/data1/satcast/edm_GOES_ch13_test_dataset.zarr'
+# 可移植性：ly 的产物根目录优先取环境变量 LY_OUTPUTS
+LY = os.environ.get('LY_OUTPUTS', '/home/group1/26fall_aiclass/ly/cira-diff/outputs')
+# 可移植性：数据根优先取环境变量 SATCAST_ROOT
+TEST_ZARR = osp.join(
+    os.environ.get('SATCAST_ROOT',
+                   '/home/group1/26fall_aiclass/yr/data1/data1/satcast'),
+    'edm_GOES_ch13_test_dataset.zarr')
 SIMVP_PRED = osp.join(_OPENSTL_DIR, 'work_dirs', 'satcast_simvp_full',
                       'baseline_eval', 'preds.npy')
 OUT_DIR = osp.join(_OPENSTL_DIR, 'docs', 'experiments',

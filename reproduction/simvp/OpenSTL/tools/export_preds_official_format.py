@@ -43,7 +43,11 @@ SEEDS = {
     'seed0': 'satcast_simvp_full_seed0',
     'seed123': 'satcast_simvp_full_seed123',
 }
-LY_GT = '/home/group1/26fall_aiclass/ly/cira-diff/outputs/eval_unet_raw_preds/gt.npy'
+# 可移植性：ly 的产物根目录优先取环境变量 LY_OUTPUTS
+LY_GT = osp.join(
+    os.environ.get('LY_OUTPUTS',
+                   '/home/group1/26fall_aiclass/ly/cira-diff/outputs'),
+    'eval_unet_raw_preds', 'gt.npy')
 
 
 def load_lt(seed_dir, name):

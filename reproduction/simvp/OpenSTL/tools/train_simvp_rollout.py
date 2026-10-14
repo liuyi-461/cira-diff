@@ -107,7 +107,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--config', default=osp.join(
         _OPENSTL_DIR, 'configs', 'satcast', 'SimVP.py'))
-    ap.add_argument('--data-root', default='/home/group1/26fall_aiclass/yr/data1/data1/satcast')
+    # 可移植性：数据根优先取环境变量 SATCAST_ROOT
+    ap.add_argument('--data-root',
+                    default=os.environ.get('SATCAST_ROOT',
+                                           '/home/group1/26fall_aiclass/yr/data1/data1/satcast'))
     ap.add_argument('--res-dir', default=osp.join(_OPENSTL_DIR, 'work_dirs'))
     ap.add_argument('--ex-name', default='satcast_simvp_rollout')
     ap.add_argument('--train-zarr', default='edm_GOES_ch13_validation_dataset.zarr',
