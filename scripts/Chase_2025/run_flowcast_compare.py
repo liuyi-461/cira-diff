@@ -29,7 +29,14 @@ import zarr
 from scipy.ndimage import uniform_filter, gaussian_filter
 from tqdm import tqdm
 
-ZJT = Path("/home/group1/26fall_aiclass/zjt/cira-diff/flowcast_v2")
+import os
+
+# 根目录可用环境变量覆盖；默认值是共享旧机 test-ai 上的位置
+SATCAST = os.environ.get("SATCAST_DIR", "/data1/satcast")
+DCM = os.environ.get("DCM_ROOT", "/home/group1/26fall_aiclass/dcm")
+ZJT_ROOT = os.environ.get("ZJT_ROOT", "/home/group1/26fall_aiclass/zjt")
+
+ZJT = Path(f"{ZJT_ROOT}/cira-diff/flowcast_v2")
 sys.path.insert(0, str(ZJT))
 
 from datasets.goes.runtime import load_vae, load_flowcast, read_config, sha256  # noqa: E402

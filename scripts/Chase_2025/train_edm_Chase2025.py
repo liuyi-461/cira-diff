@@ -31,6 +31,10 @@ from torch.utils.tensorboard import SummaryWriter
 
 #################### Classes ########################
 
+# 根目录可用环境变量覆盖；默认值是共享旧机 test-ai 上的位置
+SATCAST = os.environ.get("SATCAST_DIR", "/data1/satcast")
+DCM = os.environ.get("DCM_ROOT", "/home/group1/26fall_aiclass/dcm")
+
 @dataclass
 class TrainingConfig:
     """ This should be probably in some sort of config file, but for now its here... """
@@ -45,14 +49,14 @@ class TrainingConfig:
     lr_warmup_steps = 500 #default value from butterflies example
     save_model_epochs = 1 #i like to save alot, doesnt cost much 
     mixed_precision = "fp16"
-    output_dir = "/home/group1/26fall_aiclass/dcm/outputs/"  # the local path to store the model
+    output_dir = f"{DCM}/outputs/"  # the local path to store the model
     push_to_hub = False 
     hub_private_repo = False
     overwrite_output_dir = True  
     seed = 0 
     restart = False #do you want to start from a previous training?
-    restart_path = "/home/group1/26fall_aiclass/dcm/outputs/"
-    dataset_path = "/data1/satcast/edm_GOES_ch13_train_dataset.zarr"
+    restart_path = f"{DCM}/outputs/"
+    dataset_path = f"{SATCAST}/edm_GOES_ch13_train_dataset.zarr"
     
     #tensorboard things 
     plot_images = True 

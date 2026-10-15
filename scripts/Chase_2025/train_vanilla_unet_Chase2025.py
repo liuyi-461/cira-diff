@@ -53,6 +53,10 @@ dataset = ZarrDataset(zarr_store)
 
 # ################### Classes ########################
 
+# 根目录可用环境变量覆盖；默认值是共享旧机 test-ai 上的位置
+SATCAST = os.environ.get("SATCAST_DIR", "/data1/satcast")
+DCM = os.environ.get("DCM_ROOT", "/home/group1/26fall_aiclass/dcm")
+
 @dataclass
 class TrainingConfig:
     """ This should be probably in some sort of config file, but for now its here... """
@@ -65,7 +69,7 @@ class TrainingConfig:
     lr_warmup_steps = 500
     save_model_epochs = 1 
     mixed_precision = "fp16" 
-    output_dir = "/mnt/data1/rchas1/vanilla_unet_10_two_inputs_v2/"  # the local path to store the model 
+    output_dir = f"{DCM}/cira-diff/runs/models/vanilla_unet_10_two_inputs_v2/"  # the local path to store the model 
     push_to_hub = False
     hub_private_repo = False
     overwrite_output_dir = True  
@@ -96,7 +100,7 @@ def train_loop(config, model, optimizer, train_dataloader, lr_scheduler, val_dat
         accelerator.init_trackers("train_example")
 
         #Stuff to have an image show up 
-        writer = SummaryWriter("/mnt/data1/rchas1/vanilla_unet_10_two_inputs_v2/logs/images")
+        writer = SummaryWriter(f"{DCM}/cira-diff/runs/models/vanilla_unet_10_two_inputs_v2/logs/images")
                 #define random noise/seed vectors, here is enough seeds to run one batch of data through (i.e., one image per batch)
 
         #grab a batch of data 

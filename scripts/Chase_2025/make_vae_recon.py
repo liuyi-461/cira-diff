@@ -18,7 +18,14 @@ import numpy as np
 import torch
 import zarr
 
-ZJT = Path("/home/group1/26fall_aiclass/zjt/cira-diff/flowcast_v2")
+import os
+
+# 根目录可用环境变量覆盖；默认值是共享旧机 test-ai 上的位置
+SATCAST = os.environ.get("SATCAST_DIR", "/data1/satcast")
+DCM = os.environ.get("DCM_ROOT", "/home/group1/26fall_aiclass/dcm")
+ZJT_ROOT = os.environ.get("ZJT_ROOT", "/home/group1/26fall_aiclass/zjt")
+
+ZJT = Path(f"{ZJT_ROOT}/cira-diff/flowcast_v2")
 sys.path.insert(0, str(ZJT))
 from datasets.goes.runtime import load_vae  # noqa: E402
 from datasets.goes.normalization import to_kelvin, normalize_to_neg_one_one, denormalize_to_kelvin  # noqa: E402
@@ -28,7 +35,7 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--vae_checkpoint", default=str(ZJT / "runs/vae/vae_1005_150523/models/early_stopping_model.pt"))
     p.add_argument("--vae_config", default=str(ZJT / "runs/vae/vae_1005_150523/config_snapshot.yaml"))
-    p.add_argument("--data", default="/data1/satcast/edm_GOES_ch13_test_dataset.zarr")
+    p.add_argument("--data", default=f"{SATCAST}/edm_GOES_ch13_test_dataset.zarr")
     p.add_argument("--output", default=str(Path(__file__).resolve().parents[1] / "vae_recon/vae_recon.npy"))
     p.add_argument("--chunk_samples", type=int, default=64, help="每轮处理的样本数（控制内存）")
     p.add_argument("--batch_frames", type=int, default=8, help="VAE 编解码帧 batch（与 evaluate.py 一致）")

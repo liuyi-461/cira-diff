@@ -20,8 +20,14 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+import os
+
+# 根目录可用环境变量覆盖；默认值是共享旧机 test-ai 上的位置
+SATCAST = os.environ.get("SATCAST_DIR", "/data1/satcast")
+DCM = os.environ.get("DCM_ROOT", "/home/group1/26fall_aiclass/dcm")
+
 ROOT = Path(__file__).resolve().parents[1]                       # model_performance/ 根目录
-DATA = "/data1/satcast/edm_GOES_ch13_test_dataset.zarr"          # 原始数据（取 truth / input）
+DATA = f"{SATCAST}/edm_GOES_ch13_test_dataset.zarr"          # 原始数据（取 truth / input）
 MEAN, STD = 279.0699, 19.3297                                    # 归一化：K = x * STD + MEAN
 
 # ===================== 改这里 =====================
