@@ -1,122 +1,122 @@
-"""FlowCast (VAE-latent) vs EDM (pixel-space) blur comparison, from dcm's own
-saved forecasts. Produces per-sample side-by-side figures for the last four lead
-frames (150/160/170/180 min) plus a quantitative sharpness summary.
+"""FlowCast / EDM / UNet 三模型逐样本对比图 + 锐度汇总（点 ▶ 直接跑，无需命令行参数）。
 
-Inputs (all Kelvin float32, test order):
-    runs/evaluation/flowcast_compare/flowcast_forecasts.npy  [sample, lead, member, H, W]
-    runs/evaluation/flowcast_compare/{vae_recon,persistence,truth,input}.npy
-    runs/evaluation/edm_10/forecasts_0_10.npy                [sample, lead, member, H, W]
+要改的地方都在「改这里」区：
+    SAMPLE    画第几个样本（0~1023）
+    LEADS     画哪些预报时刻（0=10min, 1=20min, ... 17=180min）
+    COLUMNS   每一列画什么（加 CorrDiff 就往里加一行）
+    CMAP      色标；Spectral_r = 高温偏红、低温偏蓝
+    VMIN/VMAX 颜色温度范围 (K)
 
-Sharpness proxy: variance of the Laplacian (higher = sharper) and mean gradient
-magnitude, averaged over 10 samples x leads 150-180 min. Single-member vs
-ensemble-mean sharpness isolates ensemble-averaging blur from VAE/model blur.
+依赖：numpy / scipy / zarr / matplotlib（base python 即可）。
 """
-import argparse
 import json
 from pathlib import Path
 
 import numpy as np
+import zarr
 from scipy.ndimage import laplace
+
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-LEADS = [14, 15, 16, 17]                       # 0-indexed -> 150/160/170/180 min
-LEAD_LABELS = ["150 min", "160 min", "170 min", "180 min"]
-VMIN, VMAX = 200.0, 300.0
+ROOT = Path(__file__).resolve().parents[1]                       # model_performance/ 根目录
+DATA = "/data1/satcast/edm_GOES_ch13_test_dataset.zarr"          # 原始数据（取 truth / input）
+MEAN, STD = 279.0699, 19.3297                                    # 归一化：K = x * STD + MEAN
+
+# ===================== 改这里 =====================
+SAMPLE = 128                                      # 画第几个 case（0~1023）
+LEADS = [0, 5, 11, 17]                            # 10min / 1h / 2h / 3h 四个代表时刻
+LEAD_NAMES = ["10min", "1h", "2h", "3h"]          # 与 LEADS 一一对应的纵轴标签
+CMAP = "Spectral_r"                               # 统一色标：高温偏红、低温偏蓝
+VMIN, VMAX = 200.0, 300.0                         # 颜色温度范围 (K)
+OUT_DIR = ROOT / "figs"
+# ===================================================
+
+# ---- 载入该样本（mmap 只读所需切片，不加载整个大文件） ----------------------
+fc = np.load(ROOT / "flowcast/forecasts.npy", mmap_mode="r")[SAMPLE]    # (18,8,H,W)
+edm = np.load(ROOT / "edm/forecasts.npy", mmap_mode="r")[SAMPLE]        # (18,8,H,W)
+unet = np.load(ROOT / "unet/forecasts.npy", mmap_mode="r")[SAMPLE]      # (18,1,H,W)
+vae = np.load(ROOT / "vae_recon/vae_recon.npy", mmap_mode="r")[SAMPLE]  # (18,H,W) VAE 重建
+raw = zarr.open(DATA, mode="r")
+truth = raw["output_images"][SAMPLE] * STD + MEAN      # (18,H,W) K
+inp = raw["input_images"][SAMPLE] * STD + MEAN         # (2,H,W) K
+
+fc_mean = fc.mean(1)      # 集合均值 (18,H,W)
+edm_mean = edm.mean(1)
+unet = unet[:, 0]         # 单成员
+
+# ---- 每一列画什么（加 CorrDiff：先 np.load(mmap)，再加一行） ----------------
+COLUMNS = [
+    ("last obs",  lambda lead: inp[-1]),
+    ("truth",     lambda lead: truth[lead]),
+    ("VAE recon", lambda lead: vae[lead]),
+    ("FlowCast",  lambda lead: fc_mean[lead]),
+    ("EDM",       lambda lead: edm_mean[lead]),
+    ("UNet",      lambda lead: unet[lead]),
+]
 
 
 def sharpness(img):
-    """(variance of Laplacian, mean gradient magnitude); higher == sharper."""
+    """(Laplacian 方差, 平均梯度幅值)；越大越锐。"""
     f = np.asarray(img, dtype=np.float64)
     lap = laplace(f)
     gy, gx = np.gradient(f)
     return float(lap.var()), float(np.sqrt(gx ** 2 + gy ** 2).mean())
 
 
-def main(argv=None):
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--fc_dir", default="runs/evaluation/flowcast_compare")
-    p.add_argument("--edm_npy", default="runs/evaluation/edm_10/forecasts_0_10.npy")
-    p.add_argument("--out_dir", default="runs/evaluation/flowcast_compare/figs")
-    args = p.parse_args(argv)
+# ---- 画对比图 -----------------------------------------------------------------
+OUT_DIR.mkdir(parents=True, exist_ok=True)
+n = len(COLUMNS)
+fig, axes = plt.subplots(len(LEADS), n, figsize=(n * 2.2, len(LEADS) * 2.2),
+                         squeeze=False, constrained_layout=True)
+for r, lead in enumerate(LEADS):
+    for c, (name, get) in enumerate(COLUMNS):
+        ax = axes[r, c]
+        img = get(lead)
+        im = ax.imshow(img, cmap=CMAP, vmin=VMIN, vmax=VMAX)
+        ax.set_title(f"{name}\nLapVar={sharpness(img)[0]:.2e}", fontsize=9)
+        ax.set_xticks([]); ax.set_yticks([])
+    axes[r, 0].set_ylabel(LEAD_NAMES[r], fontsize=9)
+fig.suptitle(f"case {SAMPLE}", fontsize=11)
+fig.colorbar(im, ax=axes.ravel().tolist(), fraction=0.03, pad=0.02,
+             label="brightness temperature (K)")
+fig_path = OUT_DIR / f"sample_{SAMPLE:03d}.png"
+fig.savefig(fig_path, dpi=110)
+print(f"wrote {fig_path}")
 
-    fc_dir = Path(args.fc_dir)
-    flowcast = np.load(fc_dir / "flowcast_forecasts.npy")       # (N,18,8,H,W)
-    vae = np.load(fc_dir / "vae_recon.npy")                     # (N,18,H,W)
-    persistence = np.load(fc_dir / "persistence.npy")
-    truth = np.load(fc_dir / "truth.npy")
-    inp = np.load(fc_dir / "input.npy")                         # (N,2,H,W)
-    edm = np.load(args.edm_npy)                                 # (N,18,8,H,W)
+# ---- 锐度汇总（参考） -----------------------------------------------------------
+SHARPNESS = {
+    "last obs":         lambda lead: inp[-1],
+    "truth":            lambda lead: truth[lead],
+    "VAE recon":        lambda lead: vae[lead],
+    "FlowCast_mean":    lambda lead: fc_mean[lead],
+    "FlowCast_member0": lambda lead: fc[lead, 0],
+    "EDM_mean":         lambda lead: edm_mean[lead],
+    "EDM_member0":      lambda lead: edm[lead, 0],
+    "UNet":             lambda lead: unet[lead],
+}
+summary = {}
+for name, get in SHARPNESS.items():
+    lap = grad = 0.0
+    for lead in LEADS:
+        l, g = sharpness(get(lead))
+        lap += l; grad += g
+    m = len(LEADS)
+    summary[name] = dict(lap_var=lap / m, grad_mag=grad / m)
 
-    n = truth.shape[0]
-    assert flowcast.shape[0] == edm.shape[0] == n, "FlowCast/EDM sample counts differ"
-    out = Path(args.out_dir)
-    out.mkdir(parents=True, exist_ok=True)
+print(f"\n锐度汇总（case {SAMPLE}，{len(LEADS)} 个 lead 平均；lap_var 越大越锐）：")
+for name, v in summary.items():
+    print(f"  {name:18s} lap_var={v['lap_var']:.4f}  grad_mag={v['grad_mag']:.4f}")
+(OUT_DIR / "sharpness.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
-    # --- per-sample figures -------------------------------------------------
-    for s in range(n):
-        fig, axes = plt.subplots(len(LEADS), 5, figsize=(5 * 2.1, len(LEADS) * 2.2),
-                                 constrained_layout=True)
-        for r, lead in enumerate(LEADS):
-            last_obs = inp[s, -1] if r == 0 else None
-            panels = [
-                ("last obs", inp[s, -1]),
-                ("truth", truth[s, lead]),
-                ("VAE recon", vae[s, lead]),
-                ("FlowCast mean", flowcast[s, lead].mean(0)),
-                ("EDM mean", edm[s, lead].mean(0)),
-            ]
-            for c, (name, img) in enumerate(panels):
-                ax = axes[r, c]
-                lap, _ = sharpness(img)
-                ax.imshow(img, cmap="gray", vmin=VMIN, vmax=VMAX)
-                ax.set_title(f"{name}\nLapVar={lap:.2e}", fontsize=8)
-                ax.set_xticks([]); ax.set_yticks([])
-            axes[r, 0].set_ylabel(LEAD_LABELS[r], fontsize=9)
-        fig.suptitle(f"sample {s}  (gray 200-300 K; LapVar higher = sharper)", fontsize=10)
-        fig.savefig(out / f"sample_{s:03d}.png", dpi=110)
-        plt.close(fig)
-
-    # --- quantitative sharpness summary ------------------------------------
-    keys = {
-        "truth": truth,
-        "persistence": persistence,
-        "VAE_recon": vae,
-        "FlowCast_mean": flowcast.mean(2),
-        "FlowCast_member0": flowcast[:, :, 0],
-        "EDM_mean": edm.mean(2),
-        "EDM_member0": edm[:, :, 0],
-    }
-    summary = {}
-    for name, arr in keys.items():
-        lap, grad = 0.0, 0.0
-        for lead in LEADS:
-            for s in range(n):
-                l, g = sharpness(arr[s, lead])
-                lap += l; grad += g
-        m = n * len(LEADS)
-        summary[name] = dict(lap_var=lap / m, grad_mag=grad / m)
-
-    (out / "sharpness.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    print(json.dumps(summary, indent=2))
-
-    # Bar chart of variance-of-Laplacian (sharpness).
-    names = list(summary)
-    laps = [summary[k]["lap_var"] for k in names]
-    fig, ax = plt.subplots(figsize=(9, 4))
-    colors = ["#333"] + ["#888"] + ["#1f77b4", "#1f77b4", "#ff7f0e", "#ff7f0e", "#ff7f0e"]
-    bars = ax.bar(names, laps, color=["#555", "#999", "#1f77b4", "#5aa7de", "#ff7f0e", "#ffa64d", "#ffc48c"])
-    ax.set_ylabel("variance of Laplacian (sharpness)")
-    ax.set_title("Sharpness of 10-sample forecasts, leads 150-180 min (higher = sharper)")
-    ax.tick_params(axis="x", rotation=30)
-    for bar, v in zip(bars, laps):
-        ax.text(bar.get_x() + bar.get_width() / 2, v, f"{v:.2e}", ha="center", va="bottom", fontsize=8)
-    fig.tight_layout()
-    fig.savefig(out / "sharpness.png", dpi=120)
-    plt.close(fig)
-    print(f"wrote {out}/sample_*.png ({n} figures) + sharpness.json + sharpness.png")
-
-
-if __name__ == "__main__":
-    main()
+# 锐度柱状图
+fig, ax = plt.subplots(figsize=(8, 4))
+names = list(summary)
+ax.bar(names, [summary[k]["lap_var"] for k in names])
+ax.set_ylabel("variance of Laplacian (sharpness)")
+ax.set_title(f"sharpness, case {SAMPLE} (higher = sharper)")
+ax.tick_params(axis="x", rotation=30)
+fig.tight_layout()
+fig.savefig(OUT_DIR / "sharpness.png", dpi=120)
+print(f"wrote {OUT_DIR / 'sharpness.png'}")
