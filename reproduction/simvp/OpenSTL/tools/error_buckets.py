@@ -51,6 +51,11 @@ import matplotlib  # noqa: E402
 
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt  # noqa: E402
+# 中文字体：matplotlib 默认 DejaVu Sans 无 CJK 字形，不设置会让图上中文变方框
+from plot_style import use_cjk_font  # noqa: E402
+
+use_cjk_font()
+
 
 RUN_DIR = osp.join(_OPENSTL_DIR, 'work_dirs', 'satcast_simvp_full')
 OUT_DIR = osp.join(_OPENSTL_DIR, 'docs', 'experiments',

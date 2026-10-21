@@ -64,6 +64,11 @@ import matplotlib  # noqa: E402
 
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt  # noqa: E402
+# 中文字体：matplotlib 默认 DejaVu Sans 无 CJK 字形，不设置会让图上中文变方框
+from plot_style import use_cjk_font  # noqa: E402
+
+use_cjk_font()
+
 
 # 可移植性：ly 的产物根目录优先取环境变量 LY_OUTPUTS
 LY = os.environ.get('LY_OUTPUTS', '/home/group1/26fall_aiclass/ly/cira-diff/outputs')

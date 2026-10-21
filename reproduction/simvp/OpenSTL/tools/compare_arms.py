@@ -51,6 +51,11 @@ import matplotlib  # noqa: E402
 
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt  # noqa: E402
+# 中文字体：matplotlib 默认 DejaVu Sans 无 CJK 字形，不设置会让图上中文变方框
+from plot_style import use_cjk_font  # noqa: E402
+
+use_cjk_font()
+
 
 # 四臂：(显示名, 预测子目录, 颜色, 说明)
 ARMS = [
@@ -68,6 +73,9 @@ ARMS = [
      '同上，seed=1（用于 3-seed mean±std）'),
     ('SS 全量 seed7', 'satcast_simvp_rollout_ss05_full_seed7', '#bcbd22',
      '同上，seed=7（用于 3-seed mean±std）'),
+    ('GAN + SS (p=0.5)', 'satcast_simvp_gan_ss', '#17becf',
+     '对抗损失 × scheduled sampling 联合训练（validation 全量 1024 条，'
+     'K=6 p=0.5，与 SS 全量臂同配置，仅叠加对抗损失）'),
 ]
 OUT_DIR = osp.join(_OPENSTL_DIR, 'docs', 'experiments', 'EXP-006-anti-blur')
 SUB = 'baseline_eval_rollout18_full'

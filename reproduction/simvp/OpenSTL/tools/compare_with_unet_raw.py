@@ -260,6 +260,10 @@ def main():
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
 
+    # 中文字体：matplotlib 默认 DejaVu Sans 无 CJK 字形，不设置会让图上中文变方框
+    from plot_style import use_cjk_font
+    use_cjk_font()
+
     show_lt = [0, 5, 11, 17]          # 10min / 1h / 2h / 3h
     lt_label = ['10 min', '1 hour', '2 hours', '3 hours']
     cases = [c for c in args.cases if c < N]

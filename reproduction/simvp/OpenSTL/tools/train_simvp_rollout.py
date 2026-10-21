@@ -25,6 +25,29 @@ train 集只有 1 帧真值，**无法**做多步监督。但 **validation 集�
 因此**不是**严格同数据对照；对照的是"同样热启动、同样梯度步数预算下的改进方向"。
 报告时必须注明这一点。
 
+理论基础（文献）
+----------------
+本方案针对的是**曝光偏差（exposure bias）**：训练时条件帧恒为真值
+（teacher forcing），而推理（自回归 rollout）时条件帧必须是模型自己的预测，
+两者分布不一致 → 误差进入下一步输入并被放大 → 长时效发散、模糊。
+
+scheduled sampling 的原始提出：
+
+  Bengio S., Vinyals O., LeCun Y., et al.
+  "Scheduled Sampling for Sequence Prediction." 2015. arXiv:1506.03099.
+
+其思想源自模仿学习中的 DAgger（在模型自身诱导的分布上训练，而非理想的教师分布）：
+
+  Ross S., Gordon G., Bagnell D.
+  "A Reduction of Imitation Learning and Structured Prediction to No-Regret
+   Online Learning." 2011. arXiv:1011.0686.
+
+同期相关工作：Ranzato et al. 2015（MIXER）、Lamb et al. 2016（Professor Forcing）。
+
+⚠️ 与原文的差异（如实说明）：Bengio 用**随训练进程退火**的课程式 schedule
+（初期几乎全喂真值，逐步过渡到以自身预测为主）；本实现为简化版，使用
+**固定 p = 0.5**（可用 --sched-samp 调整）。
+
 用法::
     python tools/train_simvp_rollout.py --rollout-steps 6 --sched-samp 0.0   # 纯多步
     python tools/train_simvp_rollout.py --rollout-steps 6 --sched-samp 0.5   # + scheduled sampling
