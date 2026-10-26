@@ -93,6 +93,53 @@ class SatcastExperiment(BaseExperiment):
         )
 
 
+class ReverseAugmentDataset(torch.utils.data.Dataset):
+    """**反向任务增广**（`forecast-realism-report.md` §10 方案 1）。
+
+    把每条「3 帧连续真值」变成 **2 个监督对**，不引入任何新数据来源。
+
+    train 集每条样本天然含 3 帧连续真值::
+
+        input[0] = t-10min , input[1] = t , output[0] = t+10min
+
+    现有训练只用了正向这一个对::
+
+        正向: [t-10, t] -> t+10        （baseline 就是这样）
+
+    本增广新增反向对::
+
+        反向: [t+10, t] -> t-10        （新增，监督对数量翻倍）
+
+    **依据**：cycle-consistency 自监督（Epstein et al., ICCV 2021,
+    *Learning Temporal Dynamics from Cycles in Narrated Video*）——
+    "能正着推就能反着推"是动力学估计不累积误差的强约束，
+    直接针对误差累积因素②（曝光偏差）。
+
+    ⚠️ 两个必须遵守的使用约定
+    1. **只包训练集**。val/test 必须保持原样，否则评估协议被改，
+       数字不可与 baseline 比。
+    2. `__len__` 翻倍，所以 **epoch 数要减半**才能保持梯度步数与 baseline
+       一致（否则"多了数据"和"多了优化步数"两个因素混在一起）。
+    """
+
+    def __init__(self, base):
+        self.base = base
+        self.n = len(base)
+
+    def __len__(self):
+        return 2 * self.n
+
+    def __getitem__(self, idx):
+        idx = int(idx)
+        if idx < self.n:                      # 前半：原始正向对
+            return self.base[idx]
+        x, y = self.base[idx - self.n]         # x:(2,1,H,W)  y:(1,1,H,W)
+        # 反向对：输入把时间顺序倒过来 [t+10, t]，目标是 t-10
+        xr = torch.stack([y[0], x[1]], dim=0)
+        yr = x[0:1]
+        return xr, yr
+
+
 def make_cli_parser():
     parser = create_parser()
     parser.description = 'SimVP full training on Satcast GOES-13 (baseline aligned, 2->1)'
@@ -107,6 +154,11 @@ def make_cli_parser():
     parser.add_argument('--limit-val', type=int, default=None)
     parser.add_argument('--limit-test', type=int, default=None)
     parser.add_argument('--cpu', action='store_true', default=False)
+    parser.add_argument('--reverse-aug', action='store_true',
+                        help='反向任务增广（§10 方案1）：新增 [t+10,t]->t-10 监督对，'
+                             '训练集翻倍。为保持梯度步数与 baseline 一致，'
+                             '请把 --epochs 减半（100 -> 50）。仅包训练集，'
+                             'val/test 协议不变。')
     parser.add_argument('--run-test', action='store_true', default=False,
                         help='训练后跑 exp.test()；权威指标请用 eval_simvp_baseline.py')
     parser.add_argument('--display-method-info', action='store_true', default=False)
@@ -217,6 +269,23 @@ def main():
 
     batch_x, batch_y = next(iter(dataloader_train))
     print(f'batch shapes    : x={tuple(batch_x.shape)} y={tuple(batch_y.shape)}')
+
+    # ---- 反向任务增广（仅训练集；epoch 数由调用方减半以保持梯度步数一致） ----
+    if cli.reverse_aug:
+        from openstl.datasets.utils import create_loader
+        _base = dataloader_train.dataset
+        _aug = ReverseAugmentDataset(_base)
+        print(f'[REV-AUG] 训练集 {len(_base)} -> {len(_aug)} 条'
+              f'（新增反向对 [t+10,t] -> t-10；'
+              f'epochs={args.epoch}，梯度步数应与 baseline 对齐）')
+        dataloader_train = create_loader(
+            _aug, batch_size=args.batch_size, shuffle=True, is_training=True,
+            pin_memory=True, drop_last=args.drop_last,
+            num_workers=args.num_workers, distributed=args.dist,
+            use_prefetcher=args.use_prefetcher,
+            persistent_workers=args.num_workers > 0)
+        _bx, _by = next(iter(dataloader_train))
+        print(f'[REV-AUG] 增广后 batch : x={tuple(_bx.shape)} y={tuple(_by.shape)}')
 
     exp = SatcastExperiment(
         args, dataloaders=(dataloader_train, dataloader_vali, dataloader_test))
